@@ -209,12 +209,41 @@ run(machine *m)
   }
 }
 
+void
+load_file(machine *m,char *path)
+{
+  if(strlen(path) <= 0) {
+    die("load_file: no path to load");
+  }
+
+  FILE *file;
+  char *buffer;
+  long length;
+
+  file = fopen(path,"rb");
+
+  if(!file) {
+    die("load_file: file doesn't exist");
+  }
+  
+  fseek(file,0,SEEK_END);
+  length = ftell(file);
+  fseek(file,0,SEEK_SET);
+  
+  buffer = malloc(length+1);
+  fread(buffer, 1,length, file);
+  
+  fclose(file);
+
+  memcpy(&m->memory,buffer,length);
+}
+
 
 int 
 main(int argc, char **argv)
 {
   machine m;
-  
+  /*
   uint8_t *program = malloc(sizeof(uint8_t)*100);
   
   // Program to count up to 255
@@ -239,10 +268,13 @@ main(int argc, char **argv)
   // Stack Memory
   program[20] = 0x0A;
   program[21] = 0x03;
+    load_program(&m,buffer,100);
+  */
 
-  load_program(&m,program,100);
-
-  free(program);
+  
+  char *buffer;
+  load_file(&m,"hello.out");
+  free(buffer);
 
   run(&m);
 }

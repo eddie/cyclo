@@ -2,8 +2,8 @@
 
 .org 0000h
 
+ldi 0x00
 start:
-  ldi 0x00
   add 0x0A
   jpc [end]
   jmp [start]
