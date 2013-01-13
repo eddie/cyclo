@@ -4,7 +4,7 @@
 
 ldi 0x00
 start:
-  add 0x0A
+  add 0x01
   jpc [end]
   jmp [start]
 end:

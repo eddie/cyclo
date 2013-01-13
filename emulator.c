@@ -78,9 +78,12 @@ load_program(machine *m, uint8_t *data,int length)
 void 
 print_machine_status(machine *m)
 {
-  printf("Accumulator: %u Carry: %u\n", m->accumulator, (m->status >> 2) & 1);
+  printf("\rAccumulator: D:%u H:%02X Carry: %u\n", m->accumulator, m->accumulator, (m->status >> 2) & 1);
 }
 
+// TODO: Update flags on Cyclo
+// TODO: Implement Sub with carry
+// TODO: Allow simulated clock speed 
 
 void 
 run(machine *m)
@@ -105,11 +108,9 @@ run(machine *m)
     operand = (ophigh << 8) + oplow;
     opvalue = read_memory(m,operand);
 
-
     switch(opcode){
 
       case 0x00:
-        // TODO: This really needs checking.. >255 / >= 255
         if((m->accumulator + opvalue) > 255){
           m->status |= (1 << 2);
         }
@@ -126,6 +127,10 @@ run(machine *m)
       case 0x02:
         m->accumulator -= opvalue;
         OPCODE("SUB")
+        break;
+
+      case 0x03:
+        OPCODE("SBC")
         break;
 
       case 0x08:
@@ -202,6 +207,7 @@ run(machine *m)
     }
   
     print_machine_status(m);
+    usleep(1000); // 1MHz/1000 = 1Khz
   }
 }
 
@@ -245,7 +251,6 @@ dump_memory(machine *m)
     }
     printf("%02X ",m->memory[i]);
   }
-
 }
 
 

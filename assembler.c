@@ -482,7 +482,7 @@ assemble(struct token *tokens)
 
           }else{
 
-            memory[pc++] = (int8_t)dc >> 8;       // Store high of mem address
+            memory[pc++] = (int8_t)(dc >> 8) & 0xFF;       // Store high of mem address
             memory[pc++] = (int8_t)dc;            // Store low of mem address
             memory[dc++] = (int8_t)operand;       // Store 8bit value in memory
 
@@ -524,8 +524,8 @@ assemble(struct token *tokens)
 
       addr = lookup_label_address(tokens,root->s_val);
 
-      memory[(int8_t)root->i_val]   = (int8_t) addr >> 8; // High of address
-      memory[(int8_t)root->i_val+1] = (int8_t) addr;
+      memory[(int8_t)root->i_val]   = (int8_t) (addr >> 8) & 0xFF; // High
+      memory[(int8_t)root->i_val+1] = (int8_t) addr;               // Low
 
     }
     root = root->next;
