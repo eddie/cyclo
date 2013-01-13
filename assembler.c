@@ -96,7 +96,31 @@ int htoi(const char s[])
   return n;
 }
 
+void 
+dump_buffer(char *path, char *buffer, int length)
+{
+  if(!path) {
+    die("dump_buffer: no path specified");
+  }
 
+  if(!buffer) {
+    die("dump_buffer: no buffer");
+  }
+
+  if(length <=0) {
+    die("dump_buffer: zero length buffer");
+  }
+
+  FILE *file;
+  file = fopen(path,"wb");
+
+  if(!file) {
+    die("dump_buffer: couldn't open %s for writing",path);
+  }
+
+  fwrite(buffer,length,1,file);
+  fclose(file);
+}
 
 struct token{
 
@@ -324,6 +348,23 @@ calculate_code_size(struct token *root)
   return base;
 }
 
+int
+is_intermediate(char *mnemonic)
+{
+  if( (strcasecmp("ADD",mnemonic) == 0) ||
+      (strcasecmp("ADC",mnemonic) == 0) ||
+      (strcasecmp("SUB",mnemonic) == 0) ||
+      (strcasecmp("SBC",mnemonic) == 0) ||
+      (strcasecmp("AND",mnemonic) == 0) ||
+      (strcasecmp("OR", mnemonic) == 0) ||
+      (strcasecmp("XOR",mnemonic) == 0)) {
+    
+    return 1;
+  }
+  
+  return 0;        
+}
+
 int16_t 
 calculate_data_size(struct token *root)
 {
@@ -332,22 +373,12 @@ calculate_data_size(struct token *root)
 
   while(root){
 
-    if( root->type == TOP ){
+    if( root->type == TINST ){
 
       // We only want to increase data size 
       // for non jump instructions (except JPI)
       // and HLT
-
-      // Not proud of this code. Needs changing.
-      if( (strcasecmp("ADD",root->s_val) == 0) ||
-          (strcasecmp("ADC",root->s_val) == 0) ||
-          (strcasecmp("SUB",root->s_val) == 0) ||
-          (strcasecmp("SBC",root->s_val) == 0) ||
-          (strcasecmp("AND",root->s_val) == 0) ||
-          (strcasecmp("OR", root->s_val) == 0) ||
-          (strcasecmp("XOR",root->s_val) == 0)) {
-        
-        
+      if(is_intermediate(root->s_val)){
         base += 0x08;
       }
     }
@@ -356,6 +387,7 @@ calculate_data_size(struct token *root)
   
   return base;
 }
+
 
 
 int8_t 
@@ -384,18 +416,36 @@ mnemonic_to_bytecode(char *mnemonic){
   return -1; // Never reached keeps compiler quiet
 }
 
-char*
-assemble(struct token *root)
+int16_t
+lookup_label_address(struct token *root, char *label)
 {
   if(!root) {
-    die("assemble: no tokens");
+    die("lookup_label_address: no tokens");
   }
 
-  int16_t data_offset = calculate_code_size(root);
-  int16_t data_length = calculate_data_size(root);
-  data_length = 200;
+  while(root) {
 
-  printf("Data Offset: %d Length:%d\n",data_offset,data_length);
+    if(root->type == TLABEL){
+      if( strcasecmp(label,root->s_val) == 0 ){
+        return (int16_t) root->i_val;
+      }
+    }
+
+    root = root->next;
+  }
+
+  die("lookup_label_address: label not found");
+}
+
+char*
+assemble(struct token *tokens)
+{
+  if(!tokens) {
+    die("assemble: no tokens");
+  }
+  
+  int16_t data_offset = calculate_code_size(tokens);
+  int16_t data_length = calculate_data_size(tokens);
 
   int16_t pc = 0x0;
   int16_t dc = data_offset;
@@ -405,41 +455,84 @@ assemble(struct token *root)
   int8_t byte_code = 0x0;
   int16_t operand = 0x0;
 
+  struct token *root = tokens;
   struct token *tmp;
 
   while(root) {
 
     if(root->type == TINST) {
+
       byte_code = mnemonic_to_bytecode(root->s_val);
       memory[pc++] = byte_code;
 
       // Have an operand for instruction
       if(root->next) {
+
         tmp = root->next;
 
-        // It needs to be stored and an address returned
         if(tmp->type == TOP) {
-          operand = htoi(root->next->s_val);
 
-          memory[pc++] = (int8_t)dc;            // Store the memory location
-          memory[dc++] = (int8_t)operand >> 8;  // Store high data in memory
-          memory[dc++] = (int8_t)operand;       // Store low data in memory
+          operand = (int16_t) htoi(tmp->s_val);
+
+          if(is_intermediate(root->s_val)){
+
+            memory[pc++] = 0x00;
+            memory[pc++] = (int8_t)operand;
+
+          }else{
+            memory[pc++] = (int8_t)dc;            // Store the memory location
+            memory[dc++] = (int8_t)operand >> 8;  // Store high data in memory
+            memory[dc++] = (int8_t)operand;       // Store low data in memory
+
+          }
+
+        }else if(tmp->type == TADDR) {
+
+          memory[pc]   = 0x00;
+          memory[pc+1] = 0x00;
+
+          tmp->i_val = pc;
+          pc+=2; // 16bits
+
+        }else{
+
+          memory[pc++] = 0x00;
+          memory[pc++] = 0x00;
+
         }
       }
+
+    }else if(root->type == TLABEL) {
+
+      // Store address in i_value of token HACK
+      root->i_val = (int16_t) pc;
     }
 
     root = root->next;
   }
 
-  // Calculate estimate size of buffer from
-  // token count.
+  // Now we need to update label references
+  root = tokens;
+  while(root) {
 
-  // Calculate Data offset
+    if(root->type == TADDR){
+      memory[(int8_t)root->i_val] = lookup_label_address(tokens,root->s_val);
+
+      printf("Label:%s Address:%x\n",root->s_val,lookup_label_address(tokens,root->s_val));
+    }
+    root = root->next;
+  }
+
+  printf("Data Offset: %d Length:%d\n",data_offset,data_length);
+
+  dump_buffer("hello.out",memory,data_offset * sizeof(int8_t) + data_length);
+  free(memory);
 
   // Loop through tokens, convert mnemonics to bytecode
   // and add to buffer
 
-  // If opcode not hex, resolve address from label
+  // Put constants in memory and resolve address
+  // Calculate label addresses
 
   // Take operands, convert values and store in data, work out
   // offset and store offset as operand
@@ -460,8 +553,6 @@ main(int argc, char **argv)
   struct token *root;
   root = tokenize(buffer);
   xfree(buffer);
-
-  dump_list(root);
 
   char *output;
   output = assemble(root);

@@ -5,7 +5,7 @@
 start:
   ldi 0x00
   add 0x0A
-  jpc end
-  jmp start
+  jpc [end]
+  jmp [start]
 end:
   hlt
