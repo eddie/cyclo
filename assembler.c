@@ -340,7 +340,7 @@ calculate_code_size(struct token *root)
   while(root){
 
     if( root->type == TINST ){
-      base += 0x18;
+      base += 3;  // 3 Bytes per instruction
     }
     root = root->next;
   }
@@ -380,7 +380,7 @@ calculate_data_size(struct token *root)
       // and HLT
 
       if(!is_intermediate(root->s_val)){
-        base += 0x08;
+        base += 1;
       }
     }
     root = root->next;
