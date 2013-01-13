@@ -130,8 +130,8 @@ free_list(struct token *root){
 
 
 
-enum state { PROGRAM,INSTRUCTION,OPERAND,LABEL,COMMENT };
-enum tokens{ TINST,TOP,TLABEL };
+enum state { PROGRAM,INSTRUCTION,OPERAND,LABEL,COMMENT,DIRECTIVE,ADDR};
+enum tokens{ TINST,TOP,TLABEL,TDIR ,TADDR};
 
 
 void 
@@ -145,8 +145,12 @@ dump_list(struct token *root)
       printf("Instruction: %s\n",tmp->s_val);
     }else if(tmp->type == TOP){
       printf("Operand: %s\n",tmp->s_val);
-    }else{
-
+    }else if(tmp->type == TDIR){
+      printf("Directive: %s\n",tmp->s_val);
+    }else if(tmp->type == TLABEL){
+      printf("Label: %s\n",tmp->s_val);
+    }else if(tmp->type == TADDR){
+      printf("Address: %s\n",tmp->s_val);
     }
   }while((tmp = tmp->next) != NULL);
 
@@ -193,51 +197,57 @@ tokenize(char *buffer)
   for(p = buffer; p != buffer+strlen(buffer); p++) {
 
     c = *p;
-    
-    if(c == ' ') {
-      
-      if(state == INSTRUCTION) {
-        state = OPERAND;
-
-        t_tmp = create_token(t_root,TOP);
-      }
-
-      continue;
-    }
 
     if(c == '#') {
-      state = COMMENT;
-      continue;
-    }
 
-    if(isalpha(c)) {
+      state = COMMENT;
+
+    } else if(c == '.') {
+      
+      if(state == PROGRAM){
+        state = DIRECTIVE;
+        t_tmp = create_token(t_root,TDIR);
+      }
+
+    }else if(c == ' ') {
+
+      if(state == INSTRUCTION || state == DIRECTIVE) {
+
+        state = OPERAND;
+        t_tmp = create_token(t_root,TOP);
+
+      }
+    }else if(isalpha(c) || isdigit(c)) {
 
       if(state == COMMENT) continue;
 
-      if(state == INSTRUCTION || state == OPERAND) {
-        astrval(t_tmp,c);
-      }else if(state==PROGRAM) {
+      if(state == PROGRAM) {
 
         state = INSTRUCTION;
         t_tmp = create_token(t_root,TINST);
-
       }
-      continue;
-    }
 
-    if(c == ':') {
+      astrval(t_tmp,c);
+
+    }else if(c == ':') {
+
       if(state == INSTRUCTION) {
         t_tmp->type = TLABEL;
-        continue;
+        state = PROGRAM;
       }
-    }
+    }else if(c == '[') {
 
-    if(c == '\n') {
+      if(state = OPERAND){
 
+        state = ADDR;
+        t_tmp->type = TADDR;
+      }
+
+    }else if(c == '\n') {
       state = PROGRAM;
       line++;
-      continue;
     }
+
   }
 
 
