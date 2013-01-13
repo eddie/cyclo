@@ -87,9 +87,6 @@ print_machine_status(machine *m)
 }
 
 
-// We have a 3cycle instruction fetch as opcode is 8bit, and operand is 2x8 bits
-// in hardware, we can do this in software with 1 cycle using a large datatype of 24bits
-
 void 
 run(machine *m)
 {
@@ -97,8 +94,7 @@ run(machine *m)
   m->status = 0;
   m->pc = 0x0;
   
-  int running;
-  running = 1;
+  int running = 1;
   
   uint8_t opcode,oplow,ophigh;
   int16_t operand;
@@ -107,6 +103,7 @@ run(machine *m)
   while(running)
   {
     
+    // 3 Cycle Fetch
     opcode = read_memory(m,m->pc++);
     ophigh = read_memory(m,m->pc++);
     oplow  = read_memory(m,m->pc++);
@@ -241,7 +238,7 @@ main(int argc, char **argv)
   // Program to count up to 255
   program[0] = 0x08;
   program[1] = 0x00;
-  program[2] = 0x01;
+  program[2] = 0x00;
   
   program[3] = 0x00; // A
   program[4] = 0x00;
@@ -258,7 +255,7 @@ main(int argc, char **argv)
   program[12] = 0x10;
 
   // Stack Memory
-  program[20] = 0x01;
+  program[20] = 0x0A;
   program[21] = 0x03;
 
   load_program(&m,program,100);
