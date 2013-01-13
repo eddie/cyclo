@@ -1,0 +1,4 @@
+
+ldi 0x00
+add 0x0A
+hlt

@@ -78,11 +78,7 @@ load_program(machine *m, uint8_t *data,int length)
 void 
 print_machine_status(machine *m)
 {
-  printf("Accumulator: %u\n", m->accumulator);
-
-  printf("Carry: %u", (m->status >> 2) & 1);
-  
-  putchar('\n');
+  printf("Accumulator: %u Carry: %u\n", m->accumulator, (m->status >> 2) & 1);
 }
 
 
@@ -101,7 +97,6 @@ run(machine *m)
 
   while(running)
   {
-    
     // 3 Cycle Fetch
     opcode = read_memory(m,m->pc++);
     ophigh = read_memory(m,m->pc++);
@@ -109,6 +104,7 @@ run(machine *m)
   
     operand = (ophigh << 8) + oplow;
     opvalue = read_memory(m,operand);
+
 
     switch(opcode){
 
@@ -238,43 +234,37 @@ load_file(machine *m,char *path)
   memcpy(&m->memory,buffer,length);
 }
 
+void
+dump_memory(machine *m)
+{
+  int i;
+
+  for(i=0; i < 200; i++){
+    if((i % 0x10)==0){
+      printf("\n %04X | ",i);
+    }
+    printf("%02X ",m->memory[i]);
+  }
+
+}
+
 
 int 
 main(int argc, char **argv)
 {
+  if(argc < 2){
+    die("no program specified");
+  }
+
   machine m;
-  /*
-  uint8_t *program = malloc(sizeof(uint8_t)*100);
-  
-  // Program to count up to 255
-  program[0] = 0x08;
-  program[1] = 0x00;
-  program[2] = 0x00;
-  
-  program[3] = 0x00; // A
-  program[4] = 0x00;
-  program[5] = 0x14;
-  
-  program[6] = 0x0F; 
-  program[7] = 0x00;
-  program[8] = 0x0C;  // JPC B
 
-  program[9] = 0x0B;
-  program[10] = 0x00;
-  program[11] = 0x03; // JMP A
-
-  program[12] = 0x10;
-
-  // Stack Memory
-  program[20] = 0x0A;
-  program[21] = 0x03;
-    load_program(&m,buffer,100);
-  */
-
-  
   char *buffer;
-  load_file(&m,"hello.out");
+  printf("Loading program %s\n",argv[1]);
+  load_file(&m,argv[1]);
   free(buffer);
+
+  // TODO: Add dump flag
+  //dump_memory(&m);
 
   run(&m);
 }

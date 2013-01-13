@@ -476,17 +476,15 @@ assemble(struct token *tokens)
           operand = (int16_t) htoi(tmp->s_val);
 
           if(is_intermediate(root->s_val)){
-            printf("PC:%d Operand: %x\n",pc,operand);
 
             memory[pc++] = 0x00;
             memory[pc++] = (int8_t)operand;
 
-
           }else{
 
-            memory[pc++] = (int8_t)dc;            // Store the memory location
-            memory[dc++] = (int8_t)operand >> 8;  // Store high data in memory
-            memory[dc++] = (int8_t)operand;       // Store low data in memory
+            memory[pc++] = (int8_t)dc >> 8;       // Store high of mem address
+            memory[pc++] = (int8_t)dc;            // Store low of mem address
+            memory[dc++] = (int8_t)operand;       // Store 8bit value in memory
 
           }
 
@@ -518,19 +516,24 @@ assemble(struct token *tokens)
 
   // Now we need to update label references
   root = tokens;
+  int16_t addr;
+
   while(root) {
 
     if(root->type == TADDR){
-      memory[(int8_t)root->i_val] = lookup_label_address(tokens,root->s_val);
 
-      //printf("Label:%s Address:%x\n",root->s_val,lookup_label_address(tokens,root->s_val));
+      addr = lookup_label_address(tokens,root->s_val);
+
+      memory[(int8_t)root->i_val]   = (int8_t) addr >> 8; // High of address
+      memory[(int8_t)root->i_val+1] = (int8_t) addr;
+
     }
     root = root->next;
   }
 
   printf("Data Offset: %d Length:%d\n",data_offset,data_length);
 
-  dump_buffer("hello.out",memory,data_offset * sizeof(int8_t) + data_length);
+  dump_buffer("main.out",memory,data_offset * sizeof(int8_t) + data_length);
 
   free(memory);
 
@@ -541,20 +544,21 @@ assemble(struct token *tokens)
 int
 main(int argc, char **argv)
 {
-  
+  if(argc < 2){
+    die("no assembly file specified");
+  }
+
+  printf("Assembling %s\n",argv[1]);
+
   char *buffer;
-  load_file("hello.asm",&buffer);
+  load_file(argv[1],&buffer);
 
   struct token *root;
   root = tokenize(buffer);
   xfree(buffer);
 
-  char *output;
-  output = assemble(root);
-  
-  if(output)
-    free(output);
-
+  assemble(root);
+ 
   free_list(root);
 
   return 0;
