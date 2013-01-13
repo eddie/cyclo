@@ -39,7 +39,6 @@ typedef struct {
    * 2 - Sign Flag
    * 3 - Overflow flag
    * 4 - Parity Fla
-   *
    */
   
   uint8_t ir;
@@ -218,23 +217,6 @@ main(int argc, char **argv)
   
   uint8_t *program = malloc(sizeof(uint8_t)*100);
   
-  // OOPS these 16bit operands should be memory addresses not intermediate data!
-  /*
-  program[0] = 0x08; // LDI
-  program[1] = 0x00;
-  program[2] = 0x01; 
-
-  program[3] = 0x00; // Add 
-  program[4] = 0x00;
-  program[5] = 0x14;
-
-  program[6] = 0x02; // SUB
-  program[7] = 0x00;
-  program[8] = 0x15;
-
-  program[9] = 0x10; // HLT
-  */
-
   // Program to count up to 255
   program[0] = 0x08;
   program[1] = 0x00;

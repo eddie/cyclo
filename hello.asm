@@ -9,4 +9,3 @@ start:
   jmp start
 end:
   hlt
-  ldi [0x00]
