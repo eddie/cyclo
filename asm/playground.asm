@@ -1,0 +1,29 @@
+
+# Print even numbers up to 255
+
+# Setup our result location
+ldi 0x0A
+stm 0xAA
+
+ldi 0x0A
+stm 0xAB
+
+ldi 0x00
+stm 0xAC
+
+ldi 0xAD
+stm 0xFF
+
+start: 
+  ldm 0xAA
+  add 0xAB
+  stm 0xAA
+
+  ldm 0xAB
+  add 0xAD
+  stm 0xAB
+
+  jpz [start]
+
+end:
+  hlt
