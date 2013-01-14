@@ -116,6 +116,10 @@ run(machine *m)
         }
 
         m->accumulator += opvalue;
+
+        if(m->accumulator == 0){
+          m->status |= (1 << 1);
+        }
         OPCODE("ADD");
         break;
 
