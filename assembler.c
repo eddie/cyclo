@@ -300,6 +300,7 @@ tokenize(char *buffer)
 
       }
 
+      // TODO: Only append value on directive,instruction or operand
       astrval(t_tmp,c);
 
     }else if(c == ':') {

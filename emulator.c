@@ -78,7 +78,7 @@ load_program(machine *m, uint8_t *data,int length)
 void 
 print_machine_status(machine *m)
 {
-  printf("\rAccumulator: D:%u H:%02X Carry: %u\n", m->accumulator, m->accumulator, (m->status >> 2) & 1);
+  printf("\rAccumulator: D:%u H:%02X Carry: %u\n", m->accumulator, m->accumulator, (m->status >> 1) & 1);
 }
 
 // TODO: Update flags on Cyclo
@@ -111,21 +111,27 @@ run(machine *m)
     switch(opcode){
 
       case 0x00:
+
+    
         if((m->accumulator + opvalue) > 255){
-          m->status |= (1 << 2);
-        }
 
-        m->accumulator += opvalue;
-
-        if(m->accumulator == 0){
           m->status |= (1 << 1);
+          m->accumulator &= opvalue;
+
+        } else {
+          m->accumulator += opvalue;
+
+          if(m->accumulator == 0){
+            m->status |= 1;
+          }
         }
+
         OPCODE("ADD");
         break;
 
       case 0x01:
         OPCODE("ADC")
-        m->accumulator += opvalue + ( (m->status >> 2) & 1 ); // TODO: Test this 
+        m->accumulator += opvalue + ( (m->status >> 1) & 1 ); // TODO: Test this 
         break;
     
       case 0x02:
@@ -198,7 +204,7 @@ run(machine *m)
       
       case 0x0F:
         OPCODE("JPC")
-        if( (m->status >> 2) & 1 ) {
+        if( (m->status >> 1) & 1 ) {
           m->pc = operand;
         }
         break;
