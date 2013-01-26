@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <assert.h>
 
 void*
 die(const char *fmt, ...)
@@ -15,9 +16,20 @@ die(const char *fmt, ...)
   exit(1);
 }
 
-#define OPCODE(x) //printf(x"\n");
+#define OPCODE(x) printf(x"\n");
+#define MAX_DEVICE 4
 
 typedef unsigned char uint8_t;
+
+typedef struct {
+
+  int16_t mem_range[2];
+  char name[12];
+
+  void (*write)(int16_t address, uint8_t data);
+  uint8_t (*read)(int16_t address);
+
+} device;
 
 // Remember, addresses are 16bit and datapaths are 8bits
 // The operand is 16bits for 16bit addressing
@@ -43,16 +55,44 @@ typedef struct {
   
   uint8_t ir;
 
+  int device_count;
+  device devices[MAX_DEVICE];
+
 } machine;
 
+device* 
+device_from_address(machine *m, int16_t address)
+{
+  device *d;
+  d = &m->devices[0];
+
+  if(d){
+
+    if( (address >= d->mem_range[0]) &&
+        (address <= d->mem_range[1])) {
+
+      return d;
+    }
+  }
+
+  return 0;
+}
+
 void 
-write_memory(machine *m,int16_t address, uint8_t value)
+write_memory(machine *m,int16_t address, uint8_t data)
 {
   if(address >= 65536) {
     die("Seg Fault!\n");
   }
 
-  m->memory[address] = value;
+  device *d;
+  d = device_from_address(m,address);
+
+  if(d) {
+    d->write(address,data);
+  }
+
+  m->memory[address] = data;
 }
 
 uint8_t
@@ -60,6 +100,13 @@ read_memory(machine *m, int16_t address)
 {
   if(address >= 65536) {
     die("Seg fault!");
+  }
+
+  device *d;
+  d = device_from_address(m,address);
+
+  if(d) {
+    return d->read(address);
   }
 
   return m->memory[address];
@@ -79,6 +126,32 @@ void
 print_machine_status(machine *m)
 {
   printf("\rAccumulator: D:%u H:%02X Carry: %u\n", m->accumulator, m->accumulator, (m->status >> 1) & 1);
+}
+
+void
+register_device(machine *m, char *d_name, int d_index,
+  int16_t m_low, int16_t m_high,
+  void (*write)(int16_t address, uint8_t data),
+  uint8_t (*read)(int16_t address))
+{
+
+  if(d_index > MAX_DEVICE) {
+    die("device index out of range");
+  }
+
+  device *d = &m->devices[d_index];
+
+  d->mem_range[0] = m_low;
+  d->mem_range[1] = m_high;
+
+  strcpy(d->name,d_name);
+
+  d->write = write;
+  d->read = read;
+
+  printf("Device registered, Name:%s, Low:%0X, High:%0X\n",d->name,d->mem_range[0],d->mem_range[1]);
+
+  m->device_count++;
 }
 
 // TODO: Update flags on Cyclo
@@ -112,7 +185,6 @@ run(machine *m)
 
       case 0x00:
 
-    
         if((m->accumulator + opvalue) > 255){
 
           m->status |= (1 << 1);
@@ -129,9 +201,10 @@ run(machine *m)
         OPCODE("ADD");
         break;
 
+      // Should we unset the carry flag after?
       case 0x01:
         OPCODE("ADC")
-        m->accumulator += opvalue + ( (m->status >> 1) & 1 ); // TODO: Test this 
+        m->accumulator += opvalue + ( (m->status >> 1) & 1 ); 
         break;
     
       case 0x02:
@@ -176,6 +249,7 @@ run(machine *m)
       case 0x0A:
         OPCODE("STM")
         write_memory(m,operand,m->accumulator);
+        printf("Storing memory: Addr: %04X Value: %04X\n",operand,m->accumulator);
         break;
       
       case 0x0B:
@@ -217,7 +291,7 @@ run(machine *m)
     }
   
     print_machine_status(m);
-    usleep(1000); // 1MHz/1000 = 1Khz
+    //usleep(1000); // 1MHz/1000 = 1Khz
   }
 }
 
@@ -235,7 +309,7 @@ load_file(machine *m,char *path)
   file = fopen(path,"rb");
 
   if(!file) {
-    die("load_file: file doesn't exist");
+    die("load_file: %s file doesn't exist",path);
   }
   
   fseek(file,0,SEEK_END);
@@ -263,6 +337,21 @@ dump_memory(machine *m)
   }
 }
 
+// TODO: Have video memory
+
+void
+video_write(int16_t address, uint8_t data)
+{
+  //printf("Video written: %0X\n",data);
+  putchar(data);
+}
+
+uint8_t
+video_read(int16_t address)
+{
+
+}
+
 
 int 
 main(int argc, char **argv)
@@ -278,8 +367,7 @@ main(int argc, char **argv)
   load_file(&m,argv[1]);
   free(buffer);
 
-  // TODO: Add dump flag
-  //dump_memory(&m);
+  register_device(&m,"video",0,0xA000,0xA7FF,video_write,video_read);
 
   run(&m);
 }

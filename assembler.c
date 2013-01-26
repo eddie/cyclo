@@ -358,12 +358,13 @@ is_intermediate(char *mnemonic)
       (strcasecmp("SBC",mnemonic) == 0) ||
       (strcasecmp("AND",mnemonic) == 0) ||
       (strcasecmp("OR", mnemonic) == 0) ||
+      (strcasecmp("LDI", mnemonic) == 0) ||
       (strcasecmp("XOR",mnemonic) == 0)) {
     
-    return 0;
+    return 1;
   }
   
-  return 1;        
+  return 0;        
 }
 
 int16_t 
@@ -466,6 +467,8 @@ assemble(struct token *tokens)
 
       byte_code = mnemonic_to_bytecode(root->s_val);
       memory[pc++] = byte_code;
+      
+      //printf("Operator: %s Operand:%s\n",root->s_val, tmp->s_val);
 
       // Have an operand for instruction
       if(root->next) {
@@ -476,26 +479,27 @@ assemble(struct token *tokens)
 
           operand = (int16_t) htoi(tmp->s_val);
 
-          if(is_intermediate(root->s_val)){
+          memory[pc++] = (int8_t) (operand >> 8) & 0xFF;
+          memory[pc++] = (int8_t) (operand);
 
-            memory[pc++] = 0x00;
-            memory[pc++] = (int8_t)operand;
-
-          }else{
-
-            memory[pc++] = (int8_t)(dc >> 8) & 0xFF;       // Store high of mem address
-            memory[pc++] = (int8_t)dc;            // Store low of mem address
-            memory[dc++] = (int8_t)operand;       // Store 8bit value in memory
-
-          }
 
         }else if(tmp->type == TADDR) {
 
-          memory[pc]   = 0x00;
-          memory[pc+1] = 0x00;
+          // Check if address is a label or not
+          if(is_label(tmp->s_val)) {
+            
+            memory[pc]   = 0x00;
+            memory[pc+1] = 0x00;
 
-          tmp->i_val = (int16_t) pc;
-          pc+=2; // 16bits
+            tmp->i_val = (int16_t) pc;
+            pc+=2; // 16bits
+
+          }else{
+            memory[pc++] = (int8_t) (dc >> 8) & 0xFF; // Store high of mem address
+            memory[pc++] = (int8_t) dc;               // Store low of mem address
+            memory[dc++] = (int8_t) operand;          // Store 8bit value in memory
+          }
+   
 
         }else{
 
