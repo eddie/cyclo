@@ -350,16 +350,11 @@ calculate_code_size(struct token *root)
 }
 
 int
-is_intermediate(char *mnemonic)
+is_immediate(char *mnemonic)
 {
-  if( (strcasecmp("ADD",mnemonic) == 0) ||
-      (strcasecmp("ADC",mnemonic) == 0) ||
-      (strcasecmp("SUB",mnemonic) == 0) ||
-      (strcasecmp("SBC",mnemonic) == 0) ||
-      (strcasecmp("AND",mnemonic) == 0) ||
-      (strcasecmp("OR", mnemonic) == 0) ||
-      (strcasecmp("LDI", mnemonic) == 0) ||
-      (strcasecmp("XOR",mnemonic) == 0)) {
+  if( (strcasecmp("STM",mnemonic) == 0) ||
+      (strcasecmp("LDI",mnemonic) == 0) ||
+      (strcasecmp("LDM",mnemonic) == 0)) {
     
     return 1;
   }
@@ -381,7 +376,7 @@ calculate_data_size(struct token *root)
       // for non jump instructions (except JPI)
       // and HLT
 
-      if(!is_intermediate(root->s_val)){
+      if(!is_immediate(root->s_val)){
         base += 1;
       }
     }
@@ -414,6 +409,8 @@ mnemonic_to_bytecode(char *mnemonic){
   if(strcasecmp(mnemonic,"JPM")==0) return 0x0E;
   if(strcasecmp(mnemonic,"JPC")==0) return 0x0F;
   if(strcasecmp(mnemonic,"HLT")==0) return 0x10;
+  if(strcasecmp(mnemonic,"JE")==0)  return 0x11;
+  if(strcasecmp(mnemonic,"CMP")==0)  return 0x12;
 
   die("mnemonic unknown");
   return -1; // Never reached keeps compiler quiet
@@ -438,6 +435,13 @@ lookup_label_address(struct token *root, char *label)
   }
 
   die("lookup_label_address: label not found");
+}
+
+int
+is_label(char *s_val)
+{
+  return !( (s_val[0] == '0') &&
+            (s_val[1] == 'x') );
 }
 
 char*
@@ -479,25 +483,39 @@ assemble(struct token *tokens)
 
           operand = (int16_t) htoi(tmp->s_val);
 
-          memory[pc++] = (int8_t) (operand >> 8) & 0xFF;
-          memory[pc++] = (int8_t) (operand);
+          // Check if instruction is intermediate
+          if(is_immediate(root->s_val)) {
 
+            memory[pc++] = (int8_t) (operand >> 8) & 0xFF;
+            memory[pc++] = (int8_t) (operand);
+
+          } else {
+
+            // Store the value in the data segment and return
+            memory[pc++] = (int8_t) (dc >> 8) & 0xFF; // Store high of mem address
+            memory[pc++] = (int8_t) dc;               // Store low of mem address
+            memory[dc++] = (int8_t) operand;          // Store 8bit value in memory
+          }
 
         }else if(tmp->type == TADDR) {
 
+          operand = (int16_t) htoi(tmp->s_val);
+
           // Check if address is a label or not
           if(is_label(tmp->s_val)) {
-            
+
             memory[pc]   = 0x00;
             memory[pc+1] = 0x00;
 
             tmp->i_val = (int16_t) pc;
             pc+=2; // 16bits
 
+
           }else{
-            memory[pc++] = (int8_t) (dc >> 8) & 0xFF; // Store high of mem address
-            memory[pc++] = (int8_t) dc;               // Store low of mem address
-            memory[dc++] = (int8_t) operand;          // Store 8bit value in memory
+            
+            memory[pc] = (int16_t) memory[operand];
+            pc += 2;
+
           }
    
 
@@ -525,7 +543,7 @@ assemble(struct token *tokens)
 
   while(root) {
 
-    if(root->type == TADDR){
+    if(root->type == TADDR && is_label(root->s_val)){
 
       addr = lookup_label_address(tokens,root->s_val);
 

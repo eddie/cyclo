@@ -16,7 +16,7 @@ die(const char *fmt, ...)
   exit(1);
 }
 
-#define OPCODE(x) printf(x"\n");
+#define OPCODE(x) //printf(x"\n");
 #define MAX_DEVICE 4
 
 typedef unsigned char uint8_t;
@@ -125,7 +125,7 @@ load_program(machine *m, uint8_t *data,int length)
 void 
 print_machine_status(machine *m)
 {
-  printf("\rAccumulator: D:%u H:%02X Carry: %u\n", m->accumulator, m->accumulator, (m->status >> 1) & 1);
+  //printf("\rAccumulator: D:%u H:%02X Carry: %u\n", m->accumulator, m->accumulator, (m->status >> 1) & 1);
 }
 
 void
@@ -249,7 +249,7 @@ run(machine *m)
       case 0x0A:
         OPCODE("STM")
         write_memory(m,operand,m->accumulator);
-        printf("Storing memory: Addr: %04X Value: %04X\n",operand,m->accumulator);
+        //printf("Storing memory: Addr: %04X Value: %04X\n",operand,m->accumulator);
         break;
       
       case 0x0B:
@@ -287,6 +287,27 @@ run(machine *m)
         running = 0;
         OPCODE("HLT");
         break;
+
+      case 0x11:
+        OPCODE("JE")
+        if( m->accumulator == opvalue ) {
+        }
+        break;
+
+      case 0x12: 
+      {
+        OPCODE("CMP")
+        // Set the carry flag, this is wrong
+        int8_t tmp;
+        tmp = (uint8_t) (m->accumulator - opvalue );
+
+        if(tmp == 0){
+          m->status |= 1;
+        } else {
+          m->status &= 0;
+        }
+      }
+      break;
 
     }
   
