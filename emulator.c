@@ -1,3 +1,4 @@
+#include "video.h"
 #include <assert.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -92,7 +93,9 @@ void write_memory(machine *m, int16_t address,
     d = device_from_address(m, address);
 
     if (d) {
-        d->write(address, data);
+        // Normalize the address for the device
+        int16_t addr_normal = address - d->mem_range[0];
+        d->write(addr_normal, data);
     }
 
     m->memory[address] = data;
@@ -220,10 +223,16 @@ void run(machine *m) {
             OPCODE("SBC")
             break;
 
+        // TODO: ldi ldi r17,$10
+
+        // LDA: Load immediate value into accumulator
         case 0x08:
             m->accumulator = oplow;
-            OPCODE("LDI")
+            OPCODE("LDA")
             break;
+
+            // TODO: mov	r0,r16		; copy
+            // contents of r16 into r0
 
         case 0x07:
             m->accumulator = ~m->accumulator;
@@ -356,16 +365,6 @@ void dump_memory(machine *m) {
     }
 }
 
-// TODO: Have video memory
-
-void video_write(int16_t address, uint8_t data) {
-    // printf("Video written: %0X\n",data);
-    // Instead, memory location could represent X,Y grid.
-    putchar(data);
-}
-
-uint8_t video_read(int16_t address) { return -1; }
-
 int main(int argc, char **argv) {
     if (argc < 2) {
         die("no program specified");
@@ -378,6 +377,7 @@ int main(int argc, char **argv) {
     load_file(&m, argv[1]);
     free(buffer);
 
+    // TODO: Move to video
     register_device(&m, "video", 0, 0xA000, 0xA7FF,
                     video_write, video_read);
 

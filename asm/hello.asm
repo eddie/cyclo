@@ -2,7 +2,7 @@
 
 .org 0000h
 
-ldi 0x00
+lda 0x00
 start:
   add 0x01
   jpc [end]

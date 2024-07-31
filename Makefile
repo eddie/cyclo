@@ -2,7 +2,7 @@
 #
 CC = c99
 CFLAGS = -Wall
-LDFLAGS = -lc
+LDFLAGS = -lc 
 
 
 all: assembler emulator
@@ -10,8 +10,14 @@ all: assembler emulator
 assembler: assembler.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-emulator: emulator.c
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+emulator: emulator.c video.o
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) video.o
+
+video.o: video.c 
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+asm/%.bin: asm/%.asm
+	./assembler $< $@
 
 clean:
 	rm -f bin/

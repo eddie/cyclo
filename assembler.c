@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -194,9 +195,10 @@ enum state {
     LABEL,
     COMMENT,
     DIRECTIVE,
-    ADDR
+    ADDR,
+    REG,
 };
-enum tokens { TINST, TOP, TLABEL, TDIR, TADDR };
+enum tokens { TINST, TOP, TLABEL, TREG, TDIR, TADDR };
 
 void dump_list(struct token *root) {
     struct token *tmp = root;
@@ -275,6 +277,14 @@ struct token *tokenize(char *buffer) {
                 t_tmp = create_token(t_root, TOP);
             }
 
+        } else if (c == ',') {
+
+            if (state == OPERAND) {
+                // Create a new operand
+                state = OPERAND;
+                t_tmp = create_token(t_root, TOP);
+            }
+
         } else if (isalpha(c) || isdigit(c)) {
 
             if (state == COMMENT)
@@ -332,6 +342,7 @@ int16_t calculate_code_size(struct token *root) {
 
 int is_immediate(char *mnemonic) {
     if ((strcasecmp("STM", mnemonic) == 0) ||
+        (strcasecmp("LDA", mnemonic) == 0) ||
         (strcasecmp("LDI", mnemonic) == 0) ||
         (strcasecmp("LDM", mnemonic) == 0)) {
 
@@ -363,6 +374,12 @@ int16_t calculate_data_size(struct token *root) {
     return base;
 }
 
+/**
+  4 8 bit registers:
+    r0, r1, r2, r3
+  and accumulator
+*/
+
 int8_t mnemonic_to_bytecode(char *mnemonic) {
 
     // strcasecmp
@@ -382,7 +399,7 @@ int8_t mnemonic_to_bytecode(char *mnemonic) {
         return 0x06;
     if (strcasecmp(mnemonic, "NOT") == 0)
         return 0x07;
-    if (strcasecmp(mnemonic, "LDI") == 0)
+    if (strcasecmp(mnemonic, "LDA") == 0)
         return 0x08;
     if (strcasecmp(mnemonic, "LDM") == 0)
         return 0x09;
@@ -404,6 +421,8 @@ int8_t mnemonic_to_bytecode(char *mnemonic) {
         return 0x11;
     if (strcasecmp(mnemonic, "CMP") == 0)
         return 0x12;
+    if (strcasecmp(mnemonic, "LDI") == 0)
+        return 0x13;
 
     die("mnemonic unknown");
     return -1; // Never reached keeps compiler quiet
@@ -595,6 +614,7 @@ int main(int argc, char *argv[argc + 1]) {
     struct token *root;
     root = tokenize(buffer);
 
+    dump_list(root);
     struct assembly *build = assemble(root);
 
     dump_buffer(argv[2], build->buffer, build->buf_len);

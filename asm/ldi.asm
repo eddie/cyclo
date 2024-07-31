@@ -1,0 +1,4 @@
+.org 0000h
+
+ldi 0xff,0x00
+hlt

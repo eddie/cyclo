@@ -1,5 +1,5 @@
 
-ldi 0x40
+lda 0x40
 
 start:
 add 0x01
@@ -10,6 +10,7 @@ jmp [start]
 
 end:
 # New line
-ldi 0x0A
-stm 0xA000
+lda 0x0A
+stm 0xA001
 hlt
+
