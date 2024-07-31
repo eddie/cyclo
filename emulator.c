@@ -254,11 +254,13 @@ void run(machine *m) {
             m->accumulator ^= opvalue;
             break;
 
+        // Load value from memory to accumulator
         case 0x09:
             OPCODE("LDM")
             m->accumulator = opvalue;
             break;
 
+        // Store value in accumulator to memory
         case 0x0A:
             OPCODE("STM")
             write_memory(m, operand, m->accumulator);
@@ -319,7 +321,8 @@ void run(machine *m) {
             } else {
                 m->status &= 0;
             }
-        } break;
+            break;
+        }
         }
 
         print_machine_status(m);

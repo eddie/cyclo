@@ -1,4 +1,5 @@
 .org 0000h
 
-ldi 0xff,0x00
+  ldi r2, 0x00
+  ld r0, 0x25
 hlt
