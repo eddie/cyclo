@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DEBUG 0
+#define DEBUG 1
 
 void *die(const char *fmt, ...) {
     va_list args;
@@ -45,8 +45,11 @@ typedef struct {
     uint8_t memory[65536];
     int16_t pc;
 
+    // Registers
     uint8_t accumulator;
     uint8_t status;
+
+    uint8_t a, b, c, d, e, f, g;
 
     /*
      * Status Register
@@ -59,6 +62,7 @@ typedef struct {
      * 4 - Parity Fla
      */
 
+    // Interrupt register
     uint8_t ir;
 
     int device_count;
@@ -223,16 +227,27 @@ void run(machine *m) {
             OPCODE("SBC")
             break;
 
-        // TODO: ldi ldi r17,$10
-
         // LDA: Load immediate value into accumulator
-        case 0x08:
+        // TODO: Check immediate vs memory based working.
+        case 0x14:
             m->accumulator = oplow;
             OPCODE("LDA")
             break;
 
-            // TODO: mov	r0,r16		; copy
-            // contents of r16 into r0
+        case 0x15:
+            m->b = oplow;
+            OPCODE("LDB")
+            break;
+
+        case 0x2C:
+            m->accumulator = m->b;
+            OPCODE("LDAB")
+            break;
+
+        case 0x2D:
+            m->b = m->accumulator;
+            OPCODE("LDBA")
+            break;
 
         case 0x07:
             m->accumulator = ~m->accumulator;

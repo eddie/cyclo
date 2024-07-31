@@ -1,5 +1,20 @@
 .org 0000h
 
-  ldi r2, 0x00
-  ld r0, 0x25
+
+ld A, 0xff
+ld B, 0xAA
+ld C, 0x00
+ld D, 0xaa
+
+lda 0x20
+ld b,a
+
+ # ld B,0x00
+ # inc B
+
+ # ld A,B
+
+ # ldi B, 0x00
+ # ld C, [0x80]
+ # ld A, 0x25
 hlt

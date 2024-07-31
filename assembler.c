@@ -10,12 +10,113 @@
 /*
  * v0.0 Assembler for Cyclo CPU
  *
- * This is not ment to be pretty or efficient, it just needs
- * to work.
+ * This is not ment to be pretty or efficient, it just
+ * needs to work.
  *
  * eblundell@gmail.com 2013
  *
  */
+
+enum state {
+    PROGRAM,
+    INSTRUCTION,
+    OPERAND,
+    LABEL,
+    COMMENT,
+    DIRECTIVE,
+    ADDR,
+};
+
+enum tokens { TINST, TOPERAND, TLABEL, TDIR, TADDR };
+
+struct token {
+
+    char s_val[255];
+    int i_val;
+    int type;
+    int curs;
+
+    struct token *next;
+    struct token *prev;
+};
+
+struct instruction {
+    char mnemonic[5];
+    int8_t opcode;
+    int8_t args;
+};
+
+static struct instruction instructions[] = {
+    {"ADD", 0x00},
+    {"ADC", 0x01},
+    {"SUB", 0x02},
+    {"SBC", 0x03},
+    {"AND", 0x04},
+    {"OR", 0x05},
+    {"XOR", 0x06},
+    {"NOT", 0x07},
+    {"LDM", 0x09},
+    {"STM", 0x0A},
+    {"JMP", 0x0B},
+    {"JPI", 0x0C},
+    {"JPZ", 0x0D},
+    {"JPM", 0x0E},
+    {"JPC", 0x0F},
+    {"HLT", 0x10},
+    {"JE", 0x11},
+    {"CMP", 0x12},
+
+    // Load A,B from memory or immediate
+    {"LDA", 0x14},
+    {"LDB", 0x15},
+
+    // Translated, Load register
+    {"LDAB", 0x2C}, // LD a,b
+    {"LDBA", 0x2D}, // LD b,a
+};
+
+struct instruction *
+mnemonic_to_instruction(char *mnemonic) {
+
+    int total =
+        sizeof(instructions) / sizeof(struct instruction);
+
+    for (int i = 0; i < total; i++) {
+        if (strcasecmp(mnemonic,
+                       instructions[i].mnemonic) == 0) {
+            return &instructions[i];
+        }
+    }
+
+    return 0;
+}
+
+int is_multi_operand(char *mnemonic) {
+    if (strcasecmp(mnemonic, "LD") == 0)
+        return 1;
+    return 0;
+}
+
+// TODO: convert strcasecmp to macro.
+struct instruction *get_alias(char *mnemonic,
+                              struct token *operand) {
+    if (!operand) {
+        return 0;
+    }
+
+    // Translate LDA to LDAB or LDAI
+    if (strcasecmp(mnemonic, "LDA") == 0) {
+        if (strcasecmp(operand->s_val, "b") == 0) {
+            return mnemonic_to_instruction("LDAB");
+        }
+    } else if (strcasecmp(mnemonic, "LDB") == 0) {
+        if (strcasecmp(operand->s_val, "a") == 0) {
+            return mnemonic_to_instruction("LDBA");
+        }
+    }
+
+    return 0;
+};
 
 void *die(const char *fmt, ...) {
     va_list args;
@@ -51,8 +152,6 @@ void xfree(void *ptr) {
     }
 }
 
-typedef unsigned char uint8_t;
-
 int hexchar_to_int(char c) {
     c = toupper(c);
 
@@ -63,7 +162,6 @@ int hexchar_to_int(char c) {
 }
 
 int htoi(const char s[]) {
-
     int i, n, t;
     i = n = t = 0;
 
@@ -119,16 +217,6 @@ void dump_buffer(char *path, uint8_t *buffer, int length) {
     fclose(file);
 }
 
-struct token {
-
-    char s_val[255];
-    int i_val;
-    int type;
-    int curs;
-
-    struct token *next;
-};
-
 void add_list(struct token *root, struct token *next) {
     if (!root) {
         return;
@@ -138,6 +226,7 @@ void add_list(struct token *root, struct token *next) {
 
     if (root->next == NULL) {
         root->next = next;
+        next->prev = root;
         return;
     }
 
@@ -147,6 +236,7 @@ void add_list(struct token *root, struct token *next) {
     }
 
     tmp->next = next;
+    next->prev = tmp;
 }
 
 struct token *create_token(struct token *root, int type) {
@@ -173,7 +263,6 @@ void astrval(struct token *t, char c) {
 }
 
 void free_list(struct token *root) {
-
     if (!root) {
         return;
     }
@@ -188,17 +277,6 @@ void free_list(struct token *root) {
     }
 }
 
-enum state {
-    PROGRAM,
-    INSTRUCTION,
-    OPERAND,
-    LABEL,
-    COMMENT,
-    DIRECTIVE,
-    ADDR,
-};
-enum tokens { TINST, TOP, TOP_REG, TLABEL, TDIR, TADDR };
-
 void dump_list(struct token *root) {
     struct token *tmp = root;
 
@@ -206,10 +284,8 @@ void dump_list(struct token *root) {
 
         if (tmp->type == TINST) {
             printf("Instruction: %s\n", tmp->s_val);
-        } else if (tmp->type == TOP) {
+        } else if (tmp->type == TOPERAND) {
             printf("Operand: %s\n", tmp->s_val);
-        } else if (tmp->type == TOP_REG) {
-            printf("Register: %s\n", tmp->s_val);
         } else if (tmp->type == TDIR) {
             printf("Directive: %s\n", tmp->s_val);
         } else if (tmp->type == TLABEL) {
@@ -275,7 +351,7 @@ struct token *tokenize(char *buffer) {
                 state == DIRECTIVE) {
 
                 state = OPERAND;
-                t_tmp = create_token(t_root, TOP);
+                t_tmp = create_token(t_root, TOPERAND);
             }
 
         } else if (c == ',') {
@@ -283,7 +359,7 @@ struct token *tokenize(char *buffer) {
             if (state == OPERAND) {
                 // Create a new operand
                 state = OPERAND;
-                t_tmp = create_token(t_root, TOP);
+                t_tmp = create_token(t_root, TOPERAND);
             }
 
         } else if (isalpha(c) || isdigit(c)) {
@@ -295,13 +371,6 @@ struct token *tokenize(char *buffer) {
 
                 state = INSTRUCTION;
                 t_tmp = create_token(t_root, TINST);
-            }
-
-            if (state == OPERAND) {
-                if (c == 'r') {
-                    t_tmp->type = TOP_REG;
-                    continue;
-                }
             }
 
             // TODO: Only append value on
@@ -370,6 +439,7 @@ int16_t calculate_data_size(struct token *root) {
             // for non jump instructions (except JPI)
             // and HLT
 
+            // TODO: Resolve
             if (!is_direct(root->s_val)) {
                 base += 1;
             }
@@ -378,62 +448,6 @@ int16_t calculate_data_size(struct token *root) {
     }
 
     return base;
-}
-
-/**
-  4 8 bit registers:
-    r0, r1, r2, r3
-  and accumulator
-*/
-
-int8_t mnemonic_to_bytecode(char *mnemonic) {
-
-    // strcasecmp
-    if (strcasecmp(mnemonic, "ADD") == 0)
-        return 0x00;
-    if (strcasecmp(mnemonic, "ADC") == 0)
-        return 0x01;
-    if (strcasecmp(mnemonic, "SUB") == 0)
-        return 0x02;
-    if (strcasecmp(mnemonic, "SBC") == 0)
-        return 0x03;
-    if (strcasecmp(mnemonic, "AND") == 0)
-        return 0x04;
-    if (strcasecmp(mnemonic, "OR") == 0)
-        return 0x05;
-    if (strcasecmp(mnemonic, "XOR") == 0)
-        return 0x06;
-    if (strcasecmp(mnemonic, "NOT") == 0)
-        return 0x07;
-    if (strcasecmp(mnemonic, "LDA") == 0)
-        return 0x08;
-    if (strcasecmp(mnemonic, "LDM") == 0)
-        return 0x09;
-    if (strcasecmp(mnemonic, "STM") == 0)
-        return 0x0A;
-    if (strcasecmp(mnemonic, "JMP") == 0)
-        return 0x0B;
-    if (strcasecmp(mnemonic, "JPI") == 0)
-        return 0x0C;
-    if (strcasecmp(mnemonic, "JPZ") == 0)
-        return 0x0D;
-    if (strcasecmp(mnemonic, "JPM") == 0)
-        return 0x0E;
-    if (strcasecmp(mnemonic, "JPC") == 0)
-        return 0x0F;
-    if (strcasecmp(mnemonic, "HLT") == 0)
-        return 0x10;
-    if (strcasecmp(mnemonic, "JE") == 0)
-        return 0x11;
-    if (strcasecmp(mnemonic, "CMP") == 0)
-        return 0x12;
-    if (strcasecmp(mnemonic, "LD") == 0)
-        return 0x13;
-    if (strcasecmp(mnemonic, "LDI") == 0)
-        return 0x14;
-
-    die("mnemonic unknown");
-    return -1; // Never reached keeps compiler quiet
 }
 
 int16_t lookup_label_address(struct token *root,
@@ -487,94 +501,108 @@ struct assembly *assemble(struct token *tokens) {
     build->buffer = xmalloc(build->buf_len);
 
     uint8_t *memory = build->buffer;
-
-    int8_t byte_code = 0x0;
     int16_t operand = 0x0;
 
-    // Three types of instructions to handle. Direct memory
-    // instructions, register based instructions, and
-    // address based.
+    // Three types of instructions to handle. Direct
+    // memory instructions, register based instructions,
+    // and address based.
 
     while (root) {
 
+        if (root->type == TLABEL) {
+            // Store address in i_value of token HACK
+            root->i_val = (int16_t)pc;
+            continue;
+        }
+
         if (root->type == TINST) {
 
-            byte_code = mnemonic_to_bytecode(root->s_val);
-            memory[pc++] = byte_code;
-
-            // printf("Operator: %s
-            // Operand:%s\n",root->s_val, tmp->s_val);
+            struct instruction *ins =
+                mnemonic_to_instruction(root->s_val);
 
             struct token *op = root->next;
 
-            if (op) {
+            if (!ins) {
+                die("Unknown instruction %s", root->s_val);
+            }
 
-                // Store first operand.
-                if (op->type == TOP) {
+            // Handle single operation, register based
+            // translated instructions
+            struct instruction *alias =
+                get_alias(ins->mnemonic, op);
 
-                    // 1. Is it a register? Store only the 4
-                    // bits in the operand.
+            // Use the alias if we have one, and skip this
+            // operand.
+            // TODO: Handle mutliple operands.
+            //} else if (op && op->next &&
+            //           op->next->type == TOPERAND) {
+            //    printf("Got operands %s %s\n",
+            //    op->s_val,
+            //           op->next->s_val);
+            if (op && alias) {
+                printf("Have alias: %s\n", alias->mnemonic);
+                memory[pc++] = alias->opcode;
 
-                    // 2. Do we have another operand lined
-                    // up? If so store 12 bits in the
-                    // operand
+                // Skip next operand
+                root = root->next;
+                continue;
 
-                    operand = (int16_t)htoi(op->s_val);
+            } else if (op) {
+                memory[pc++] = ins->opcode;
+            }
 
-                    // Check if instruction is direct
-                    if (is_direct(root->s_val)) {
+            // Store first operand.
+            if (op && op->type == TOPERAND) {
+                operand = (int16_t)htoi(op->s_val);
 
-                        memory[pc++] =
-                            (int8_t)(operand >> 8) & 0xFF;
-                        memory[pc++] = (int8_t)(operand);
+                // Check if instruction is direct
+                if (is_direct(root->s_val)) {
 
-                    } else {
-                        // Store the value in the data
-                        // segment and return
-                        memory[pc++] =
-                            (int8_t)(dc >> 8) &
-                            0xFF; // Store high of mem
-                                  // address
-                        memory[pc++] =
-                            (int8_t)dc; // Store low of
-                                        // mem address
-                        memory[dc++] = (int8_t)
-                            operand; // Store 8bit value
-                                     // in memory
-                    }
-
-                } else if (op->type == TADDR) {
-
-                    operand = (int16_t)htoi(op->s_val);
-
-                    // Check if address is a label or
-                    // not
-                    if (is_label(op->s_val)) {
-
-                        memory[pc] = 0x00;
-                        memory[pc + 1] = 0x00;
-
-                        op->i_val = (int16_t)pc;
-                        pc += 2; // 16bits
-
-                    } else {
-
-                        memory[pc] =
-                            (int16_t)memory[operand];
-                        pc += 2;
-                    }
+                    memory[pc++] =
+                        (int8_t)(operand >> 8) & 0xFF;
+                    memory[pc++] = (int8_t)(operand);
 
                 } else {
 
-                    memory[pc++] = 0x00;
-                    memory[pc++] = 0x00;
+                    // Store the value in the data
+                    // segment and return
+                    memory[pc++] = (int8_t)(dc >> 8) &
+                                   0xFF; // Store high of
+                                         // mem address
+                    memory[pc++] =
+                        (int8_t)dc; // Store low of
+                                    // mem address
+                    memory[dc++] =
+                        (int8_t)operand; // Store 8bit value
+                                         // in memory
                 }
+
+            } else if (op && op->type == TADDR) {
+
+                operand = (int16_t)htoi(op->s_val);
+
+                // Check if address is a label or
+                // not
+                if (is_label(op->s_val)) {
+
+                    // nop
+                    memory[pc] = 0x00;
+                    memory[pc + 1] = 0x00;
+
+                    op->i_val = (int16_t)pc;
+                    pc += 2; // 16bits
+
+                } else {
+
+                    memory[pc] = (int16_t)memory[operand];
+                    pc += 2;
+                }
+
+            } else {
+
+                memory[pc++] = 0x00;
+                memory[pc++] = 0x00;
             }
-
-        } else if (root->type == TLABEL) {
-
-            // Store address in i_value of token HACK
-            root->i_val = (int16_t)pc;
         }
 
         root = root->next;
@@ -615,7 +643,6 @@ int free_assembly(struct assembly *build) {
 }
 
 int main(int argc, char *argv[argc + 1]) {
-
     if (argc < 2) {
         die("no assembly file specified");
     }
