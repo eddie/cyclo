@@ -1,7 +1,10 @@
 
 
-  lda b
+  lda 0x30
+  ldb a
+  inc a
   ldb a 
+  inc b
   lda [0x19]
   ldb [0x91]
 

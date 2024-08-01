@@ -74,6 +74,7 @@ static struct instruction instructions[] = {
     {"HLT", 0xFF},
     {"JE", 0x11},
     {"CMP", 0x12},
+    {"INC", -1},
 
     // Load A,B from memory or immediate
     {"LDA", 0x14},
@@ -82,6 +83,9 @@ static struct instruction instructions[] = {
     // Translated, Load register
     {"LDAB", 0x2C}, // LD a,b
     {"LDBA", 0x2D}, // LD b,a
+
+    {"INCA", 0x30},
+    {"INCB", 0x31},
 };
 
 struct instruction *
@@ -121,6 +125,12 @@ struct instruction *get_alias(char *mnemonic,
     } else if (strcasecmp(mnemonic, "LDB") == 0) {
         if (strcasecmp(operand->s_val, "a") == 0) {
             return mnemonic_to_instruction("LDBA");
+        }
+    } else if (strcasecmp(mnemonic, "INC") == 0) {
+        if (strcasecmp(operand->s_val, "a") == 0) {
+            return mnemonic_to_instruction("INCA");
+        } else if (strcasecmp(operand->s_val, "b") == 0) {
+            return mnemonic_to_instruction("INCB");
         }
     }
 

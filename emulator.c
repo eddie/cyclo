@@ -130,9 +130,8 @@ void load_program(machine *m, uint8_t *data, int length) {
 void print_machine_status(machine *m) {
 
 #if DEBUG
-    printf("\rAccumulator: D:%u H:%02X Carry: %u\n",
-           m->accumulator, m->accumulator,
-           (m->status >> 1) & 1);
+    printf("\rA:%02X B:%02X Carry: %u\n", m->accumulator,
+           m->b, (m->status >> 1) & 1);
 #endif
 }
 
@@ -180,7 +179,7 @@ void run(machine *m) {
 
     while (running) {
 #if DEBUG
-        printf("Fetching instruction at %04X\n", m->pc);
+        printf("Fetching instruction at %04X ->", m->pc);
 #endif
         // 3 Cycle Fetch
         opcode = read_memory(m, m->pc++);
@@ -331,6 +330,17 @@ void run(machine *m) {
                 m->status &= 0;
             }
             break;
+
+        case 0x30: {
+            OPCODE("INCA")
+            m->accumulator++;
+            break;
+        }
+        case 0x31: {
+            OPCODE("INCB")
+            m->b++;
+            break;
+        }
         case 0xFF:
             running = 0;
             OPCODE("HLT");
