@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DEBUG 1
+#define DEBUG 0
 
 void *die(const char *fmt, ...) {
     va_list args;
@@ -71,7 +71,7 @@ typedef struct {
 } machine;
 
 struct device *device_from_address(machine *m,
-                                   int16_t address) {
+                                   uint16_t address) {
     struct device *d;
     d = &m->devices[0];
 
@@ -87,9 +87,9 @@ struct device *device_from_address(machine *m,
     return 0;
 }
 
-void write_memory(machine *m, int16_t address,
+void write_memory(machine *m, uint16_t address,
                   uint8_t data) {
-    if (address >= 65536) {
+    if (address >= 65535) {
         die("Seg Fault!\n");
     }
 
@@ -98,7 +98,7 @@ void write_memory(machine *m, int16_t address,
 
     if (d) {
         // Normalize the address for the device
-        int16_t addr_normal = address - d->mem_range[0];
+        uint16_t addr_normal = address - d->mem_range[0];
         d->write(addr_normal, data);
     }
 
@@ -236,7 +236,7 @@ void run(machine *m) {
             break;
 
         case 0x15:
-            m->b = oplow;
+            m->b = operand;
             OPCODE("LDB")
             break;
 
@@ -284,7 +284,6 @@ void run(machine *m) {
 
         case 0x0B:
             OPCODE("JMP")
-            printf("Jumping to %#4x", operand);
             m->pc = operand;
             break;
 
@@ -341,6 +340,16 @@ void run(machine *m) {
             m->b++;
             break;
         }
+
+        case 0x20:
+            OPCODE("STAIB")
+            write_memory(m, m->b, m->accumulator);
+            break;
+        case 0x21:
+            OPCODE("STBIA")
+            write_memory(m, m->accumulator, m->b);
+            break;
+
         case 0xFF:
             running = 0;
             OPCODE("HLT");

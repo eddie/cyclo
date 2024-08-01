@@ -50,7 +50,7 @@ struct token {
 };
 
 struct instruction {
-    char mnemonic[5];
+    char mnemonic[6];
     int8_t opcode;
     int8_t args;
 };
@@ -79,6 +79,13 @@ static struct instruction instructions[] = {
     // Load A,B from memory or immediate
     {"LDA", 0x14},
     {"LDB", 0x15},
+
+    {"STA", 0x16},
+    {"STB", 0x17},
+    // Store value in A into address (indirect) in B
+    {"STAIB", 0x20},
+    // Store value in B into address (indirect) in A
+    {"STBIA", 0x21},
 
     // Translated, Load register
     {"LDAB", 0x2C}, // LD a,b
@@ -131,6 +138,16 @@ struct instruction *get_alias(char *mnemonic,
             return mnemonic_to_instruction("INCA");
         } else if (strcasecmp(operand->s_val, "b") == 0) {
             return mnemonic_to_instruction("INCB");
+        }
+    } else if (strcasecmp(mnemonic, "STA") == 0) {
+        if (operand->type == TADDR &&
+            strcasecmp(operand->s_val, "b") == 0) {
+            return mnemonic_to_instruction("STAIB");
+        }
+    } else if (strcasecmp(mnemonic, "STB") == 0) {
+        if (operand->type == TADDR &&
+            strcasecmp(operand->s_val, "a") == 0) {
+            return mnemonic_to_instruction("STBIA");
         }
     }
 
@@ -444,8 +461,8 @@ int16_t calculate_data_size(struct token *root) {
 
         if (root->type == TOPERAND) {
 
-            // Only increase data size for non-address based
-            // instructions
+            // Only increase data size for non-address
+            // based instructions
             base += 1;
         }
         root = root->next;
@@ -476,6 +493,11 @@ int16_t lookup_label_address(struct token *root,
 }
 
 int is_label(char *s_val) {
+    if (strcasecmp(s_val, "a") == 0) {
+        return 0;
+    } else if (strcasecmp(s_val, "b") == 0) {
+        return 0;
+    }
     return !((s_val[0] == '0') && (s_val[1] == 'x'));
 }
 
@@ -538,8 +560,8 @@ struct assembly *assemble(struct token *tokens) {
             struct instruction *alias =
                 get_alias(ins->mnemonic, op);
 
-            // Use the alias if we have one, and skip this
-            // operand.
+            // Use the alias if we have one, and skip
+            // this operand.
             // TODO: Handle mutliple operands.
             //} else if (op && op->next &&
             //           op->next->type == TOPERAND) {
@@ -582,17 +604,21 @@ struct assembly *assemble(struct token *tokens) {
                 // segment and return
                 // why are we doing this indirectly?
                 // memory[pc++] = (int8_t)(dc >> 8) &
-                //                0xFF;       // Store high
-                //                of
-                //                            // mem address
-                // memory[pc++] = (int8_t)dc; // Store low
-                // of
-                //                            // mem address
+                //                0xFF;       // Store
+                //                high of
+                //                            // mem
+                //                            address
+                // memory[pc++] = (int8_t)dc; // Store
+                // low of
+                //                            // mem
+                //                            address
                 // memory[dc++] =
-                //    (int8_t)operand; // Store 8bit value
+                //    (int8_t)operand; // Store 8bit
+                //    value
                 // in memory
 
-                // Direct addressing calls e.g lda [0xff]
+                // Direct addressing calls e.g lda
+                // [0xff]
             } else if (op && op->type == TADDR) {
 
                 DEBUG_ASSEMBLER_VAL("addr", ins, 2,
@@ -607,7 +633,8 @@ struct assembly *assemble(struct token *tokens) {
                     memory[pc++] = 0x00;
                     memory[pc++] = 0x00;
 
-                    // Store the address of the label in PM
+                    // Store the address of the label in
+                    // PM
                     op->i_val = (int16_t)pc - 2;
                 } else {
                     // Store the address directly
