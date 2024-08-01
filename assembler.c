@@ -7,6 +7,15 @@
 #include <string.h>
 #include <strings.h>
 
+#define DEBUG_ASSEMBLER(type, inst, width)                 \
+    printf("Write %-8s %-6s(%#04x) PC:%#04x W: %d\n",      \
+           type, inst->mnemonic, inst->opcode, pc, width);
+
+#define DEBUG_ASSEMBLER_VAL(type, inst, width, val)        \
+    printf(                                                \
+        "Write %-8s %-6s(%#04x) PC:%#04x W: %d \t %s\n",   \
+        type, inst->mnemonic, inst->opcode, pc, width,     \
+        val);
 /*
  * v0.0 Assembler for Cyclo CPU
  *
@@ -62,7 +71,7 @@ static struct instruction instructions[] = {
     {"JPZ", 0x0D},
     {"JPM", 0x0E},
     {"JPC", 0x0F},
-    {"HLT", 0x10},
+    {"HLT", 0xFF},
     {"JE", 0x11},
     {"CMP", 0x12},
 
@@ -417,32 +426,17 @@ int16_t calculate_code_size(struct token *root) {
     return base;
 }
 
-int is_direct(char *mnemonic) {
-    if ((strcasecmp("STM", mnemonic) == 0) ||
-        (strcasecmp("LDM", mnemonic) == 0)) {
-
-        return 1;
-    }
-
-    return 0;
-}
-
 int16_t calculate_data_size(struct token *root) {
     int16_t base;
     base = 0x00;
 
     while (root) {
 
-        if (root->type == TINST) {
+        if (root->type == TOPERAND) {
 
-            // We only want to increase data size
-            // for non jump instructions (except JPI)
-            // and HLT
-
-            // TODO: Resolve
-            if (!is_direct(root->s_val)) {
-                base += 1;
-            }
+            // Only increase data size for non-address based
+            // instructions
+            base += 1;
         }
         root = root->next;
     }
@@ -512,7 +506,9 @@ struct assembly *assemble(struct token *tokens) {
         if (root->type == TLABEL) {
             // Store address in i_value of token HACK
             root->i_val = (int16_t)pc;
-            continue;
+            printf("Label: %s PC: %d\n", root->s_val, pc);
+
+            goto next;
         }
 
         if (root->type == TINST) {
@@ -540,70 +536,80 @@ struct assembly *assemble(struct token *tokens) {
             //    op->s_val,
             //           op->next->s_val);
             if (op && alias) {
-                printf("Have alias: %s\n", alias->mnemonic);
+                DEBUG_ASSEMBLER("alias", alias, 1);
                 memory[pc++] = alias->opcode;
+
+                // Is there is no additional opperand
+                // we must pad the instruction
+                if (op->next &&
+                    op->next->type != TOPERAND) {
+                    DEBUG_ASSEMBLER("oppad", alias, 2);
+                    memory[pc++] = 0x00;
+                    memory[pc++] = 0x00;
+                }
 
                 // Skip next operand
                 root = root->next;
-                continue;
+                goto next;
 
-            } else if (op) {
+            } else {
+                DEBUG_ASSEMBLER("instr", ins, 1);
                 memory[pc++] = ins->opcode;
             }
 
-            // Store first operand.
+            // Value based arguments
             if (op && op->type == TOPERAND) {
+                DEBUG_ASSEMBLER_VAL("operand", ins, 2,
+                                    op->s_val);
+
                 operand = (int16_t)htoi(op->s_val);
 
-                // Check if instruction is direct
-                if (is_direct(root->s_val)) {
+                // Store the value in the data
+                // segment and return
+                // why are we doing this indirectly?
+                memory[pc++] = (int8_t)(dc >> 8) &
+                               0xFF;       // Store high of
+                                           // mem address
+                memory[pc++] = (int8_t)dc; // Store low of
+                                           // mem address
+                memory[dc++] =
+                    (int8_t)operand; // Store 8bit value
+                                     // in memory
 
-                    memory[pc++] =
-                        (int8_t)(operand >> 8) & 0xFF;
-                    memory[pc++] = (int8_t)(operand);
-
-                } else {
-
-                    // Store the value in the data
-                    // segment and return
-                    memory[pc++] = (int8_t)(dc >> 8) &
-                                   0xFF; // Store high of
-                                         // mem address
-                    memory[pc++] =
-                        (int8_t)dc; // Store low of
-                                    // mem address
-                    memory[dc++] =
-                        (int8_t)operand; // Store 8bit value
-                                         // in memory
-                }
-
+                // Direct addressing calls e.g lda [0xff]
             } else if (op && op->type == TADDR) {
 
+                DEBUG_ASSEMBLER_VAL("addr", ins, 2,
+                                    op->s_val);
+
                 operand = (int16_t)htoi(op->s_val);
 
-                // Check if address is a label or
-                // not
+                // doesnt start with 0x, likely a label
                 if (is_label(op->s_val)) {
 
-                    // nop
-                    memory[pc] = 0x00;
-                    memory[pc + 1] = 0x00;
+                    // reserve space for second pass
+                    memory[pc++] = 0x00;
+                    memory[pc++] = 0x00;
 
+                    // Store the address of the label in PM
                     op->i_val = (int16_t)pc;
-                    pc += 2; // 16bits
+                    pc += 2; // 16bit address
 
                 } else {
-
-                    memory[pc] = (int16_t)memory[operand];
-                    pc += 2;
+                    // Store the address directly
+                    memory[pc++] =
+                        (int8_t)(operand >> 8) & 0xFF;
+                    memory[pc++] = (int8_t)operand;
                 }
 
             } else {
+                DEBUG_ASSEMBLER("noarg", ins, 2);
 
                 memory[pc++] = 0x00;
                 memory[pc++] = 0x00;
             }
         }
+    next:
 
         root = root->next;
     }
@@ -651,7 +657,7 @@ int main(int argc, char *argv[argc + 1]) {
         die("no output file specified");
     }
 
-    printf("Assembling %s\n", argv[1]);
+    printf("Parsing %s\n", argv[1]);
 
     char *buffer;
     load_file(argv[1], &buffer);
@@ -659,9 +665,15 @@ int main(int argc, char *argv[argc + 1]) {
 
     struct token *root;
     root = tokenize(buffer);
-
     dump_list(root);
+
+    printf("\n\n-------------------------------\n");
+    printf("Assembling.. %s\n", argv[1]);
+    printf("-----------------------------------\n\n");
+
     struct assembly *build = assemble(root);
+
+    printf("Outputing buffer length %d\n", build->buf_len);
 
     dump_buffer(argv[2], build->buffer, build->buf_len);
 

@@ -110,8 +110,7 @@ uint8_t read_memory(machine *m, int16_t address) {
         die("Seg fault!");
     }
 
-    struct device *d;
-    d = device_from_address(m, address);
+    struct device *d = device_from_address(m, address);
 
     if (d) {
         return d->read(address);
@@ -314,11 +313,6 @@ void run(machine *m) {
             }
             break;
 
-        case 0x10:
-            running = 0;
-            OPCODE("HLT");
-            break;
-
         case 0x11:
             OPCODE("JE")
             if (m->accumulator == opvalue) {
@@ -336,6 +330,10 @@ void run(machine *m) {
             } else {
                 m->status &= 0;
             }
+            break;
+        case 0xFF:
+            running = 0;
+            OPCODE("HLT");
             break;
         }
         }
@@ -370,6 +368,7 @@ void load_file(machine *m, char *path) {
     fclose(file);
 
     memcpy(&m->memory, buffer, length);
+    free(buffer);
 }
 
 void dump_memory(machine *m) {
@@ -390,10 +389,8 @@ int main(int argc, char **argv) {
 
     machine m;
 
-    char *buffer = 0;
     printf("Loading program %s\n", argv[1]);
     load_file(&m, argv[1]);
-    free(buffer);
 
     // TODO: Move to video
     register_device(&m, "video", 0, 0xA000, 0xA7FF,
