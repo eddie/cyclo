@@ -30,11 +30,11 @@ typedef unsigned char uint8_t;
 
 struct device {
 
-    int16_t mem_range[2];
+    uint16_t mem_range[2];
     char name[12];
 
-    void (*write)(int16_t address, uint8_t data);
-    uint8_t (*read)(int16_t address);
+    void (*write)(uint16_t address, uint8_t data);
+    uint8_t (*read)(uint16_t address);
 };
 
 // Remember, addresses are 16bit and datapaths are 8bits
@@ -43,13 +43,13 @@ struct device {
 typedef struct {
 
     uint8_t memory[65536];
-    int16_t pc;
+    uint16_t pc;
 
     // Registers
-    uint8_t accumulator;
+    uint16_t accumulator;
     uint8_t status;
 
-    uint8_t a, b, c, d, e, f, g;
+    uint16_t a, b, c, d, e, f, g;
 
     /*
      * Status Register
@@ -130,16 +130,16 @@ void load_program(machine *m, uint8_t *data, int length) {
 void print_machine_status(machine *m) {
 
 #if DEBUG
-    printf("\rA:%02X B:%02X Carry: %u\n", m->accumulator,
+    printf("\rA:%04x B:%04x Carry: %u\n", m->accumulator,
            m->b, (m->status >> 1) & 1);
 #endif
 }
 
 void register_device(machine *m, char *d_name, int d_index,
-                     int16_t m_low, int16_t m_high,
-                     void (*write)(int16_t address,
+                     uint16_t m_low, uint16_t m_high,
+                     void (*write)(uint16_t address,
                                    uint8_t data),
-                     uint8_t (*read)(int16_t address)) {
+                     uint8_t (*read)(uint16_t address)) {
 
     if (d_index > MAX_DEVICE) {
         die("device index out of range");
@@ -174,8 +174,7 @@ void run(machine *m) {
     int running = 1;
 
     uint8_t opcode, oplow, ophigh;
-    int16_t operand;
-    uint8_t opvalue;
+    uint16_t operand;
 
     while (running) {
         // 3 Cycle Fetch
@@ -183,11 +182,13 @@ void run(machine *m) {
         ophigh = read_memory(m, m->pc++);
         oplow = read_memory(m, m->pc++);
 
-        operand = (ophigh << 8) + oplow;
-        opvalue = read_memory(m, operand);
+        operand = ophigh << 8;
+        operand = operand + oplow;
 
 #if DEBUG
-        printf("[%02X]: Op: %02x %04x \t", m->pc, opcode,
+        printf("OP HIGH: %02X OP LOW: %02X OPERAND: %04X\n",
+               ophigh, oplow, operand);
+        printf("[%02X]: op: %02X %04X \t", m->pc, opcode,
                operand);
 #endif
 
@@ -195,13 +196,13 @@ void run(machine *m) {
 
         case 0x00:
 
-            if ((m->accumulator + opvalue) > 255) {
+            if ((m->accumulator + operand) > 65535) {
 
                 m->status |= (1 << 1);
-                m->accumulator &= opvalue;
+                m->accumulator &= operand;
 
             } else {
-                m->accumulator += opvalue;
+                m->accumulator += operand;
 
                 if (m->accumulator == 0) {
                     m->status |= 1;
@@ -215,11 +216,11 @@ void run(machine *m) {
         case 0x01:
             OPCODE("ADC")
             m->accumulator +=
-                opvalue + ((m->status >> 1) & 1);
+                operand + ((m->status >> 1) & 1);
             break;
 
         case 0x02:
-            m->accumulator -= opvalue;
+            m->accumulator -= operand;
             OPCODE("SUB")
             break;
 
@@ -230,7 +231,7 @@ void run(machine *m) {
         // LDA: Load immediate value into accumulator
         // TODO: Check immediate vs memory based working.
         case 0x14:
-            m->accumulator = oplow;
+            m->accumulator = operand;
             OPCODE("LDA")
             break;
 
@@ -256,31 +257,29 @@ void run(machine *m) {
 
         case 0x04:
             OPCODE("AND")
-            m->accumulator &= opvalue;
+            m->accumulator &= operand;
             break;
 
         case 0x05:
             OPCODE("OR")
-            m->accumulator |= opvalue;
+            m->accumulator |= operand;
             break;
 
         case 0x06:
             OPCODE("XOR")
-            m->accumulator ^= opvalue;
+            m->accumulator ^= operand;
             break;
 
         // Load value from memory to accumulator
         case 0x09:
             OPCODE("LDM")
-            m->accumulator = opvalue;
+            m->accumulator = read_memory(m, operand);
             break;
 
         // Store value in accumulator to memory
         case 0x0A:
             OPCODE("STM")
             write_memory(m, operand, m->accumulator);
-            // printf("Storing memory: Addr: %04X Value:
-            // %04X\n",operand,m->accumulator);
             break;
 
         case 0x0B:
@@ -291,11 +290,12 @@ void run(machine *m) {
 
         case 0x0C:
             OPCODE("JPI")
-            m->pc = opvalue;
+            m->pc = read_memory(m, operand);
             break;
 
         case 0x0D:
             OPCODE("JPZ")
+            // First bit set. jump
             if (m->status & 1) {
                 m->pc = operand;
             }
@@ -317,16 +317,13 @@ void run(machine *m) {
 
         case 0x11:
             OPCODE("JE")
-            if (m->accumulator == opvalue) {
-            }
             break;
 
         case 0x12: {
             OPCODE("CMP")
             // Set the carry flag, this is wrong
             int8_t tmp;
-            tmp = (uint8_t)(m->accumulator - opvalue);
-
+            tmp = (uint8_t)(m->accumulator - operand);
             if (tmp == 0) {
                 m->status |= 1;
             } else {

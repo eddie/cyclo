@@ -574,18 +574,23 @@ struct assembly *assemble(struct token *tokens) {
                                     op->s_val);
 
                 operand = (int16_t)htoi(op->s_val);
+                memory[pc++] =
+                    (int8_t)(operand >> 8) & 0xFF;
+                memory[pc++] = (int8_t)operand;
 
                 // Store the value in the data
                 // segment and return
                 // why are we doing this indirectly?
-                memory[pc++] = (int8_t)(dc >> 8) &
-                               0xFF;       // Store high of
-                                           // mem address
-                memory[pc++] = (int8_t)dc; // Store low of
-                                           // mem address
-                memory[dc++] =
-                    (int8_t)operand; // Store 8bit value
-                                     // in memory
+                // memory[pc++] = (int8_t)(dc >> 8) &
+                //                0xFF;       // Store high
+                //                of
+                //                            // mem address
+                // memory[pc++] = (int8_t)dc; // Store low
+                // of
+                //                            // mem address
+                // memory[dc++] =
+                //    (int8_t)operand; // Store 8bit value
+                // in memory
 
                 // Direct addressing calls e.g lda [0xff]
             } else if (op && op->type == TADDR) {

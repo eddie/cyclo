@@ -1,9 +1,10 @@
 #include "video.h"
 #include <stdio.h>
 
-// TODO: Have video memory
+// TODO: Character mode vs pixel mode.
 
-void video_write(int16_t address, uint8_t data) {
+// TODO: Have video memory
+void video_write(uint16_t address, uint8_t data) {
 
     printf("Video written: %2X at %4X\n", data, address);
     // Instead, memory location could represent X,Y grid.
@@ -15,4 +16,4 @@ void video_write(int16_t address, uint8_t data) {
     // is_cmd(address) ...
 }
 
-uint8_t video_read(int16_t address) { return -1; }
+uint8_t video_read(uint16_t address) { return -1; }
