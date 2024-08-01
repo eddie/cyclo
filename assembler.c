@@ -516,7 +516,8 @@ struct assembly *assemble(struct token *tokens) {
         if (root->type == TLABEL) {
             // Store address in i_value of token HACK
             root->i_val = (int16_t)pc;
-            printf("Label: %s PC: %d\n", root->s_val, pc);
+            printf("Label: %s PC: %#04x\n", root->s_val,
+                   pc);
 
             goto next;
         }
@@ -602,9 +603,7 @@ struct assembly *assemble(struct token *tokens) {
                     memory[pc++] = 0x00;
 
                     // Store the address of the label in PM
-                    op->i_val = (int16_t)pc;
-                    pc += 2; // 16bit address
-
+                    op->i_val = (int16_t)pc - 2;
                 } else {
                     // Store the address directly
                     memory[pc++] =
@@ -635,6 +634,8 @@ struct assembly *assemble(struct token *tokens) {
             addr =
                 lookup_label_address(tokens, root->s_val);
 
+            printf("Label: %s Addr: %#04x\n", root->s_val,
+                   addr);
             memory[(int8_t)root->i_val] =
                 (int8_t)(addr >> 8) & 0xFF; // High
             memory[(int8_t)root->i_val + 1] =

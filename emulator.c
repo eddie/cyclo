@@ -178,9 +178,6 @@ void run(machine *m) {
     uint8_t opvalue;
 
     while (running) {
-#if DEBUG
-        printf("Fetching instruction at %04X ->", m->pc);
-#endif
         // 3 Cycle Fetch
         opcode = read_memory(m, m->pc++);
         ophigh = read_memory(m, m->pc++);
@@ -188,6 +185,11 @@ void run(machine *m) {
 
         operand = (ophigh << 8) + oplow;
         opvalue = read_memory(m, operand);
+
+#if DEBUG
+        printf("[%02X]: Op: %02x %04x \t", m->pc, opcode,
+               operand);
+#endif
 
         switch (opcode) {
 
@@ -283,6 +285,7 @@ void run(machine *m) {
 
         case 0x0B:
             OPCODE("JMP")
+            printf("Jumping to %#4x", operand);
             m->pc = operand;
             break;
 
