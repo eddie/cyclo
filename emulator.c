@@ -1,3 +1,4 @@
+#include "emulator.h"
 #include "video.h"
 #include <assert.h>
 #include <stdarg.h>
@@ -24,56 +25,11 @@ void *die(const char *fmt, ...) {
 #define OPCODE(x)
 #endif
 
-#define MAX_DEVICE 4
-
 typedef unsigned char uint8_t;
 
-struct device {
-
-    uint16_t mem_range[2];
-    char name[12];
-
-    void (*write)(uint16_t address, uint8_t data);
-    uint8_t (*read)(uint16_t address);
-};
-
-// Remember, addresses are 16bit and datapaths are 8bits
-// The operand is 16bits for 16bit addressing
-
-typedef struct {
-
-    uint8_t memory[65536];
-    uint16_t pc;
-
-    // Registers
-    uint16_t accumulator;
-    uint8_t status;
-
-    uint16_t a, b, c, d, e, f, g;
-
-    /*
-     * Status Register
-     *
-     * Lowest
-     * 0 - Zero Flag
-     * 1 - Carry Flag
-     * 2 - Sign Flag
-     * 3 - Overflow flag
-     * 4 - Parity Fla
-     */
-
-    // Interrupt register
-    uint8_t ir;
-
-    int device_count;
-    struct device devices[MAX_DEVICE];
-
-} machine;
-
-struct device *device_from_address(machine *m,
+struct device *device_from_address(struct machine *m,
                                    uint16_t address) {
-    struct device *d;
-    d = &m->devices[0];
+    struct device *d = m->devices[0];
 
     if (d) {
 
@@ -87,7 +43,7 @@ struct device *device_from_address(machine *m,
     return 0;
 }
 
-void write_memory(machine *m, uint16_t address,
+void write_memory(struct machine *m, uint16_t address,
                   uint8_t data) {
     if (address >= 65535) {
         die("Seg Fault!\n");
@@ -105,7 +61,7 @@ void write_memory(machine *m, uint16_t address,
     m->memory[address] = data;
 }
 
-uint8_t read_memory(machine *m, uint16_t address) {
+uint8_t read_memory(struct machine *m, uint16_t address) {
 
     struct device *d = device_from_address(m, address);
 
@@ -116,7 +72,8 @@ uint8_t read_memory(machine *m, uint16_t address) {
     return m->memory[address];
 }
 
-void load_program(machine *m, uint8_t *data, int length) {
+void load_program(struct machine *m, uint8_t *data,
+                  int length) {
     if (!data) {
         die("No program, halting!");
     }
@@ -125,7 +82,7 @@ void load_program(machine *m, uint8_t *data, int length) {
 }
 
 #if DEBUG
-void print_machine_status(machine *m) {
+void print_machine_status(struct machine *m) {
     printf("\rA:%04x B:%04x Carry: %u\n", m->accumulator,
            m->b, (m->status >> 1) & 1);
 }
@@ -133,54 +90,44 @@ void print_machine_status(machine *m) {
 void print_machine_status() {}
 #endif
 
-void register_device(machine *m, char *d_name, int d_index,
-                     uint16_t m_low, uint16_t m_high,
-                     void (*write)(uint16_t address,
-                                   uint8_t data),
-                     uint8_t (*read)(uint16_t address)) {
+int emu_register_device(struct machine *m,
+                        struct device *dev) {
 
-    if (d_index > MAX_DEVICE) {
+    int index = m->device_count++;
+    printf("Registering device %d\n", index);
+    if (index > MAX_DEVICE) {
         die("device index out of range");
     }
 
-    struct device *d = &m->devices[d_index];
-
-    d->mem_range[0] = m_low;
-    d->mem_range[1] = m_high;
-
-    strcpy(d->name, d_name);
-
-    d->write = write;
-    d->read = read;
+    m->devices[index] = dev;
+    struct device *d = m->devices[index];
 
     printf(
         "Device registered, Name:%s, Low:%0X, High:%0X\n",
         d->name, d->mem_range[0], d->mem_range[1]);
 
-    m->device_count++;
+    return 0;
 }
 
 // TODO: Update flags on Cyclo
 // TODO: Implement Sub with carry
 // TODO: Allow simulated clock speed
 
-void run(machine *m) {
+void run(struct machine *m) {
     m->accumulator = 0;
+    m->b = 0;
     m->status = 0;
     m->pc = 0x0;
 
     int running = 1;
 
-    uint8_t opcode, oplow, ophigh;
-    uint16_t operand;
-
     while (running) {
         // 3 Cycle Fetch
-        opcode = read_memory(m, m->pc++);
-        ophigh = read_memory(m, m->pc++);
-        oplow = read_memory(m, m->pc++);
+        uint8_t opcode = read_memory(m, m->pc++);
+        uint8_t ophigh = read_memory(m, m->pc++);
+        uint8_t oplow = read_memory(m, m->pc++);
 
-        operand = ophigh << 8;
+        uint16_t operand = ophigh << 8;
         operand = operand + oplow;
 
 #if DEBUG
@@ -360,7 +307,7 @@ void run(machine *m) {
     }
 }
 
-void load_file(machine *m, char *path) {
+void load_file(struct machine *m, char *path) {
     if (strlen(path) <= 0) {
         die("load_file: no path to load");
     }
@@ -388,7 +335,7 @@ void load_file(machine *m, char *path) {
     free(buffer);
 }
 
-void dump_memory(machine *m) {
+void dump_memory(struct machine *m) {
     int i;
 
     for (i = 0; i < 200; i++) {
@@ -404,14 +351,12 @@ int main(int argc, char **argv) {
         die("no program specified");
     }
 
-    machine m;
+    struct machine m = {.device_count = 0};
 
     printf("Loading program %s\n", argv[1]);
     load_file(&m, argv[1]);
 
-    // TODO: Move to video
-    register_device(&m, "video", 0, 0xA000, 0xA7FF,
-                    video_write, video_read);
+    register_video_device(&m);
 
     run(&m);
 }
