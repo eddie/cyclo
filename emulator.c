@@ -83,8 +83,9 @@ void load_program(struct machine *m, uint8_t *data,
 
 #if DEBUG
 void print_machine_status(struct machine *m) {
-    printf("\rA:%04x B:%04x Carry: %u\n", m->accumulator,
-           m->b, (m->status >> 1) & 1);
+    printf("\rA:%04x B:%04x HL:%04x%04x Carry: %u\n",
+           m->accumulator, m->b, m->h, m->l,
+           (m->status >> 1) & 1);
 }
 #else
 void print_machine_status() {}
@@ -112,6 +113,7 @@ int emu_register_device(struct machine *m,
 // TODO: Update flags on Cyclo
 // TODO: Implement Sub with carry
 // TODO: Allow simulated clock speed
+// TODO: Update all flags after appropriate operations
 
 void run(struct machine *m) {
     m->accumulator = 0;
@@ -184,6 +186,15 @@ void run(struct machine *m) {
             m->b = operand;
             OPCODE("LDB")
             break;
+        case 0x16:
+            m->h = operand;
+            OPCODE("LDH")
+            break;
+
+        case 0x17:
+            m->l = operand;
+            OPCODE("LDL")
+            break;
 
         case 0x2C:
             m->accumulator = m->b;
@@ -193,6 +204,15 @@ void run(struct machine *m) {
         case 0x2D:
             m->b = m->accumulator;
             OPCODE("LDBA")
+            break;
+
+        case 0x2E:
+            m->accumulator = m->l;
+            OPCODE("LDAL")
+            break;
+        case 0x2F:
+            m->l = m->accumulator;
+            OPCODE("LDLA")
             break;
 
         case 0x07:
@@ -300,6 +320,9 @@ void run(struct machine *m) {
             }
             break;
 
+        // TODO: Clean these up when we have more consistent
+        // instruction set as we can reduce this repeated
+        // code
         case 0x30: {
             OPCODE("INCA")
             m->accumulator++;
@@ -310,43 +333,50 @@ void run(struct machine *m) {
             m->b++;
             break;
         }
-        case 0x16:
+        case 0x32: {
+            OPCODE("INCH")
+            m->h++;
+            break;
+        }
+        case 0x33: {
+            OPCODE("INCL")
+            m->l++;
+            break;
+        }
+        case 0x19:
             OPCODE("STA")
             write_memory(m, operand, m->accumulator);
             break;
-        case 0x17:
+        case 0x20:
             OPCODE("STB")
             write_memory(m, operand, m->b);
             break;
 
-        case 0x20:
-            OPCODE("STAIB")
-            write_memory(m, m->b, m->accumulator);
-            break;
         case 0x21:
-            OPCODE("STBIA")
-            write_memory(m, m->accumulator, m->b);
+            OPCODE("STAX")
+            uint16_t rm = (m->h << 8) + m->l;
+            write_memory(m, rm, m->accumulator);
             break;
 
-        case 0x32:
+        case 0x42:
             OPCODE("PUSHA")
-            m->stack[m->sp++] = m->accumulator;
+            m->memory[m->sp++] = m->accumulator;
             printf("\tPushed A: %04X %04X\n",
-                   m->accumulator, m->stack[m->sp - 1]);
+                   m->accumulator, m->memory[m->sp - 1]);
             break;
-        case 0x33:
+        case 0x43:
             OPCODE("PUSHB")
-            m->stack[m->sp++] = m->b;
+            m->memory[m->sp++] = m->b;
             break;
-        case 0x34:
+        case 0x44:
             OPCODE("POPA")
-            printf("\tPopped A: %04X %04X\n",
-                   m->accumulator, m->stack[m->sp - 1]);
-            m->accumulator = m->stack[--m->sp];
+            m->accumulator = m->memory[--m->sp];
+            printf("\tPopped A: %04X %04X %04x\n",
+                   m->accumulator, m->memory[m->sp], m->sp);
             break;
-        case 0x35:
+        case 0x45:
             OPCODE("POPB")
-            m->b = m->stack[--m->sp];
+            m->b = m->memory[--m->sp];
             break;
 
         case 0xFF:
@@ -405,7 +435,7 @@ int main(int argc, char **argv) {
         die("no program specified");
     }
 
-    struct machine m = {.device_count = 0};
+    struct machine m = {.device_count = 0, .sp = 0x1000};
 
     printf("Loading program %s\n", argv[1]);
     load_file(&m, argv[1]);

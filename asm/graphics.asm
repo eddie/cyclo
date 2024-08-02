@@ -5,18 +5,17 @@ init:
 lda 0x03
 sta 0xA000
 
-lda 0xA000
-ldb 0x0000
+# Base address of display
+ldh 0xA0
+ldl 0x00
 
 start:
-
-  # Done yet?
+  lda l
   cmp 0xFF
   jpz [end]
-  add 0x01
 
-  # Even / odd
-  push a
+  add 0x01
+  ldl a
   and 0x0F
 
   # Event
@@ -24,15 +23,13 @@ start:
   jmp [storeB]
 
 storeA:
-  pop a 
-  ldb 0xAA
-  stb [a]
+  lda 0xAA
+  stax
   jmp [start]
 
 storeB:
-  pop a 
-  ldb 0xBB
-  stb [a]
+  lda 0xBB
+  stax
   jmp [start]
 
 

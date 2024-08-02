@@ -77,34 +77,36 @@ static struct instruction instructions[] = {
 
     {"HLT", 0xFF},
 
-    {"INC", 0xFF},
-
     // Load A,B from memory or immediate
     {"LDA", 0x14},
     {"LDB", 0x15},
+    {"LDH", 0x16},
+    {"LDL", 0x17},
 
-    {"STA", 0x16},
-    {"STB", 0x17},
-    // Store value in A into address (indirect) in B
-    {"STAIB", 0x20},
-    // Store value in B into address (indirect) in A
-    {"STBIA", 0x21},
+    {"STA", 0x19},
+    {"STB", 0x20},
+
+    // Store value in A into (HL)
+    {"STAX", 0x21},
 
     // Translated, Load register
     {"LDAB", 0x2C}, // LD a,b
     {"LDBA", 0x2D}, // LD b,a
+    {"LDAL", 0x2E}, // LD a,l
+    {"LDLA", 0x2F}, // LD l,a
 
+    {"INC", 0xFF},
     {"INCA", 0x30},
     {"INCB", 0x31},
+    {"INCH", 0x32},
+    {"INCL", 0x33},
 
     {"POP", 0xFF},
     {"PUSH", 0xFF},
-
-    {"PUSHA", 0x32},
-    {"PUSHB", 0x33},
-    {"POPA", 0x34},
-    {"POPB", 0x35},
-
+    {"PUSHA", 0x42},
+    {"PUSHB", 0x43},
+    {"POPA", 0x44},
+    {"POPB", 0x45},
 };
 
 struct instruction *
@@ -140,27 +142,37 @@ struct instruction *get_alias(char *mnemonic,
     if (strcasecmp(mnemonic, "LDA") == 0) {
         if (strcasecmp(operand->s_val, "b") == 0) {
             return mnemonic_to_instruction("LDAB");
+        } else if (strcasecmp(operand->s_val, "l") == 0) {
+            return mnemonic_to_instruction("LDAL");
         }
     } else if (strcasecmp(mnemonic, "LDB") == 0) {
         if (strcasecmp(operand->s_val, "a") == 0) {
             return mnemonic_to_instruction("LDBA");
+        }
+    } else if (strcasecmp(mnemonic, "LDL") == 0) {
+        if (strcasecmp(operand->s_val, "a") == 0) {
+            return mnemonic_to_instruction("LDLA");
         }
     } else if (strcasecmp(mnemonic, "INC") == 0) {
         if (strcasecmp(operand->s_val, "a") == 0) {
             return mnemonic_to_instruction("INCA");
         } else if (strcasecmp(operand->s_val, "b") == 0) {
             return mnemonic_to_instruction("INCB");
+        } else if (strcasecmp(operand->s_val, "h") == 0) {
+            return mnemonic_to_instruction("INCH");
+        } else if (strcasecmp(operand->s_val, "l") == 0) {
+            return mnemonic_to_instruction("INCL");
         }
     } else if (strcasecmp(mnemonic, "STA") == 0) {
-        if (operand->type == TADDR &&
-            strcasecmp(operand->s_val, "b") == 0) {
-            return mnemonic_to_instruction("STAIB");
-        }
+        // if (operand->type == TADDR &&
+        //     strcasecmp(operand->s_val, "b") == 0) {
+        //     return mnemonic_to_instruction("STAIB");
+        // }
     } else if (strcasecmp(mnemonic, "STB") == 0) {
-        if (operand->type == TADDR &&
-            strcasecmp(operand->s_val, "a") == 0) {
-            return mnemonic_to_instruction("STBIA");
-        }
+        // if (operand->type == TADDR &&
+        //     strcasecmp(operand->s_val, "a") == 0) {
+        //     return mnemonic_to_instruction("STBIA");
+        // }
     } else if (strcasecmp("PUSH", mnemonic) == 0) {
         if (strcasecmp(operand->s_val, "a") == 0) {
             return mnemonic_to_instruction("PUSHA");
