@@ -1,9 +1,15 @@
 
+init:
+
+# Initialize the display
+lda 0x03
+sta 0xA000
 
 lda 0xA000
 ldb 0x0000
 
 start:
+
 
   add 0x01
 

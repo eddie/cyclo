@@ -285,6 +285,14 @@ void run(struct machine *m) {
             m->b++;
             break;
         }
+        case 0x16:
+            OPCODE("STA")
+            write_memory(m, operand, m->accumulator);
+            break;
+        case 0x17:
+            OPCODE("STB")
+            write_memory(m, operand, m->b);
+            break;
 
         case 0x20:
             OPCODE("STAIB")
@@ -359,4 +367,6 @@ int main(int argc, char **argv) {
     register_video_device(&m);
 
     run(&m);
+
+    return EXIT_SUCCESS;
 }
