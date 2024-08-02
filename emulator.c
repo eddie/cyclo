@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DEBUG 0
+#define DEBUG 1
 
 void *die(const char *fmt, ...) {
     va_list args;
@@ -203,16 +203,31 @@ void run(struct machine *m) {
         case 0x04:
             OPCODE("AND")
             m->accumulator &= operand;
+            // Set the zero flag.
+            if (m->accumulator == 0) {
+                m->status |= 1;
+            }
+
             break;
 
         case 0x05:
             OPCODE("OR")
             m->accumulator |= operand;
+
+            // Set the zero flag.
+            if (m->accumulator == 0) {
+                m->status |= 1;
+            }
+
             break;
 
         case 0x06:
             OPCODE("XOR")
             m->accumulator ^= operand;
+            // Set the zero flag.
+            if (m->accumulator == 0) {
+                m->status |= 1;
+            }
             break;
 
         // Load value from memory to accumulator
@@ -259,11 +274,21 @@ void run(struct machine *m) {
             }
             break;
 
-        case 0x11:
-            OPCODE("JE")
+        case 0x12:
+            OPCODE("JPE")
+            if ((m->status >> 4) & 1) {
+                m->pc = operand;
+            }
             break;
 
-        case 0x12: {
+        case 0x13:
+            OPCODE("JPO")
+            if ((m->status >> 4) & 0) {
+                m->pc = operand;
+            }
+            break;
+
+        case 0x11: {
             OPCODE("CMP")
             // Set the carry flag, this is wrong
             int8_t tmp;
@@ -301,6 +326,27 @@ void run(struct machine *m) {
         case 0x21:
             OPCODE("STBIA")
             write_memory(m, m->accumulator, m->b);
+            break;
+
+        case 0x32:
+            OPCODE("PUSHA")
+            m->stack[m->sp++] = m->accumulator;
+            printf("\tPushed A: %04X %04X\n",
+                   m->accumulator, m->stack[m->sp - 1]);
+            break;
+        case 0x33:
+            OPCODE("PUSHB")
+            m->stack[m->sp++] = m->b;
+            break;
+        case 0x34:
+            OPCODE("POPA")
+            printf("\tPopped A: %04X %04X\n",
+                   m->accumulator, m->stack[m->sp - 1]);
+            m->accumulator = m->stack[--m->sp];
+            break;
+        case 0x35:
+            OPCODE("POPB")
+            m->b = m->stack[--m->sp];
             break;
 
         case 0xFF:

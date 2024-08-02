@@ -22,11 +22,14 @@ struct machine {
     uint8_t memory[65536];
     uint16_t pc;
 
+    uint16_t stack[16];
+    uint8_t sp;
+
     // Registers
     uint16_t accumulator;
     uint8_t status;
 
-    uint16_t a, b, c, d, e, f, g;
+    uint16_t a, b;
 
     /*
      * Status Register

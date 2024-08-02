@@ -65,14 +65,18 @@ static struct instruction instructions[] = {
     {"NOT", 0x07},
     {"LDM", 0x09},
     {"STM", 0x0A},
+
     {"JMP", 0x0B},
     {"JPI", 0x0C},
     {"JPZ", 0x0D},
     {"JPM", 0x0E},
     {"JPC", 0x0F},
+    {"CMP", 0x11},
+    {"JPE", 0x12},
+    {"JPO", 0x13},
+
     {"HLT", 0xFF},
-    {"JE", 0x11},
-    {"CMP", 0x12},
+
     {"INC", 0xFF},
 
     // Load A,B from memory or immediate
@@ -92,6 +96,15 @@ static struct instruction instructions[] = {
 
     {"INCA", 0x30},
     {"INCB", 0x31},
+
+    {"POP", 0xFF},
+    {"PUSH", 0xFF},
+
+    {"PUSHA", 0x32},
+    {"PUSHB", 0x33},
+    {"POPA", 0x34},
+    {"POPB", 0x35},
+
 };
 
 struct instruction *
@@ -147,6 +160,18 @@ struct instruction *get_alias(char *mnemonic,
         if (operand->type == TADDR &&
             strcasecmp(operand->s_val, "a") == 0) {
             return mnemonic_to_instruction("STBIA");
+        }
+    } else if (strcasecmp("PUSH", mnemonic) == 0) {
+        if (strcasecmp(operand->s_val, "a") == 0) {
+            return mnemonic_to_instruction("PUSHA");
+        } else if (strcasecmp(operand->s_val, "b") == 0) {
+            return mnemonic_to_instruction("PUSHB");
+        }
+    } else if (strcasecmp("POP", mnemonic) == 0) {
+        if (strcasecmp(operand->s_val, "a") == 0) {
+            return mnemonic_to_instruction("POPA");
+        } else if (strcasecmp(operand->s_val, "b") == 0) {
+            return mnemonic_to_instruction("POPB");
         }
     }
 

@@ -10,20 +10,39 @@ ldb 0x0000
 
 start:
 
-
+  # Done yet?
+  cmp 0xFF
+  jpz [end]
   add 0x01
 
-  # Write the value in B to the address in A
+  # Even / odd
+  push a
+  and 0x0F
+
+  # Event
+  jpz [storeA]
+  jmp [storeB]
+
+storeA:
+  pop a 
+  ldb 0xAA
   stb [a]
-  incb
+  jmp [start]
 
-  cmp 0x000A
-
-  jpz [end]
+storeB:
+  pop a 
+  ldb 0xBB
+  stb [a]
   jmp [start]
 
 
 end:
-  lda 0x0A
+  
+  # sync 
+  lda 0x02
+  sta 0xA000
+  lda 0x02
+  sta 0xA000
+
   hlt
 
