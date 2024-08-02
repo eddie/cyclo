@@ -175,8 +175,6 @@ void run(struct machine *m) {
             OPCODE("SBC")
             break;
 
-        // LDA: Load immediate value into accumulator
-        // TODO: Check immediate vs memory based working.
         case 0x14:
             m->accumulator = operand;
             OPCODE("LDA")

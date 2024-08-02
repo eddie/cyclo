@@ -16,7 +16,9 @@ start:
 
   add 0x01
   ldl a
-  and 0x0F
+  # 0000 1110
+  and 0x0E
+
 
   # Event
   jpz [storeA]

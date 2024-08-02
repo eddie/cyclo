@@ -486,6 +486,9 @@ int16_t calculate_code_size(struct token *root) {
         root = root->next;
     }
 
+    // HLT
+    base += 3;
+
     return base;
 }
 
@@ -710,6 +713,10 @@ struct assembly *assemble(struct token *tokens) {
         }
         root = root->next;
     }
+
+    // Add HLT
+    memory[data_offset - 3] =
+        mnemonic_to_instruction("HLT")->opcode;
 
     printf("Data Offset: %d Length:%d\n", data_offset,
            data_length);
