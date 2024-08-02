@@ -51,8 +51,7 @@ struct token {
 
 struct instruction {
     char mnemonic[6];
-    int8_t opcode;
-    int8_t args;
+    uint8_t opcode;
 };
 
 static struct instruction instructions[] = {
@@ -74,7 +73,7 @@ static struct instruction instructions[] = {
     {"HLT", 0xFF},
     {"JE", 0x11},
     {"CMP", 0x12},
-    {"INC", -1},
+    {"INC", 0xFF},
 
     // Load A,B from memory or immediate
     {"LDA", 0x14},
@@ -152,7 +151,7 @@ struct instruction *get_alias(char *mnemonic,
     }
 
     return 0;
-};
+}
 
 void *die(const char *fmt, ...) {
     va_list args;
@@ -519,7 +518,6 @@ struct assembly *assemble(struct token *tokens) {
     int16_t data_length = calculate_data_size(tokens);
 
     int16_t pc = 0x0;
-    int16_t dc = data_offset;
 
     // Allocate buffer for assembly
     build->buf_len =

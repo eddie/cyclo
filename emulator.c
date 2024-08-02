@@ -105,10 +105,7 @@ void write_memory(machine *m, uint16_t address,
     m->memory[address] = data;
 }
 
-uint8_t read_memory(machine *m, int16_t address) {
-    if (address >= 65536) {
-        die("Seg fault!");
-    }
+uint8_t read_memory(machine *m, uint16_t address) {
 
     struct device *d = device_from_address(m, address);
 
@@ -127,13 +124,14 @@ void load_program(machine *m, uint8_t *data, int length) {
     memcpy(&m->memory, data, length);
 }
 
-void print_machine_status(machine *m) {
-
 #if DEBUG
+void print_machine_status(machine *m) {
     printf("\rA:%04x B:%04x Carry: %u\n", m->accumulator,
            m->b, (m->status >> 1) & 1);
-#endif
 }
+#else
+void print_machine_status() {}
+#endif
 
 void register_device(machine *m, char *d_name, int d_index,
                      uint16_t m_low, uint16_t m_high,
