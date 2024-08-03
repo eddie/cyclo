@@ -27,6 +27,8 @@ struct machine {
     uint8_t status;
     uint8_t accumulator, b, c, d, e, h, l;
 
+    uint8_t halted;
+
     /*
      * Status Register
      *

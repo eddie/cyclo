@@ -17,8 +17,8 @@ start:
   add 0x01
   ldl a
   # 0000 1110
-  and 0x0E
-
+  and 0x02
+  xor 0xF0
 
   # Event
   jpz [storeA]
@@ -38,8 +38,6 @@ storeB:
 end:
   
   # sync 
-  lda 0x02
-  sta 0xA000
   lda 0x02
   sta 0xA000
 

@@ -81,15 +81,11 @@ void load_program(struct machine *m, uint8_t *data,
     memcpy(&m->memory, data, length);
 }
 
-#if DEBUG
 void print_machine_status(struct machine *m) {
     printf("\rA:%04x B:%04x HL:%04x%04x Carry: %u\n",
            m->accumulator, m->b, m->h, m->l,
            (m->status >> 1) & 1);
 }
-#else
-void print_machine_status() {}
-#endif
 
 int emu_register_device(struct machine *m,
                         struct device *dev) {
@@ -114,278 +110,277 @@ int emu_register_device(struct machine *m,
 // TODO: Implement Sub with carry
 // TODO: Allow simulated clock speed
 // TODO: Update all flags after appropriate operations
-
-void run(struct machine *m) {
+//
+void init(struct machine *m) {
     m->accumulator = 0;
     m->b = 0;
     m->status = 0;
     m->pc = 0x0;
+    m->halted = 0;
+}
 
-    int running = 1;
+void step(struct machine *m) {
 
-    while (running) {
-        // 3 Cycle Fetch
-        uint8_t opcode = read_memory(m, m->pc++);
-        uint8_t ophigh = read_memory(m, m->pc++);
-        uint8_t oplow = read_memory(m, m->pc++);
+    // 3 Cycle Fetch
+    uint8_t opcode = read_memory(m, m->pc++);
+    uint8_t ophigh = read_memory(m, m->pc++);
+    uint8_t oplow = read_memory(m, m->pc++);
 
-        uint16_t operand = ophigh << 8;
-        operand = operand + oplow;
+    uint16_t operand = ophigh << 8;
+    operand = operand + oplow;
 
 #if DEBUG
-        printf("OP HIGH: %02X OP LOW: %02X OPERAND: %04X\n",
-               ophigh, oplow, operand);
-        printf("[%02X]: op: %02X %04X \t", m->pc, opcode,
-               operand);
+    printf("OP HIGH: %02X OP LOW: %02X OPERAND: %04X\n",
+           ophigh, oplow, operand);
+    printf("[%02X]: op: %02X %04X \t", m->pc, opcode,
+           operand);
 #endif
 
-        switch (opcode) {
+    switch (opcode) {
 
-        case 0x00:
+    case 0x00:
 
-            if ((m->accumulator + operand) > 65535) {
+        if ((m->accumulator + operand) > 65535) {
 
-                m->status |= (1 << 1);
-                m->accumulator &= operand;
-
-            } else {
-                m->accumulator += operand;
-
-                if (m->accumulator == 0) {
-                    m->status |= 1;
-                }
-            }
-
-            OPCODE("ADD");
-            break;
-
-        // Should we unset the carry flag after?
-        case 0x01:
-            OPCODE("ADC")
-            m->accumulator +=
-                operand + ((m->status >> 1) & 1);
-            break;
-
-        case 0x02:
-            m->accumulator -= operand;
-            OPCODE("SUB")
-            break;
-
-        case 0x03:
-            OPCODE("SBC")
-            break;
-
-        case 0x14:
-            m->accumulator = operand;
-            OPCODE("LDA")
-            break;
-
-        case 0x15:
-            m->b = operand;
-            OPCODE("LDB")
-            break;
-        case 0x16:
-            m->h = operand;
-            OPCODE("LDH")
-            break;
-
-        case 0x17:
-            m->l = operand;
-            OPCODE("LDL")
-            break;
-
-        case 0x2C:
-            m->accumulator = m->b;
-            OPCODE("LDAB")
-            break;
-
-        case 0x2D:
-            m->b = m->accumulator;
-            OPCODE("LDBA")
-            break;
-
-        case 0x2E:
-            m->accumulator = m->l;
-            OPCODE("LDAL")
-            break;
-        case 0x2F:
-            m->l = m->accumulator;
-            OPCODE("LDLA")
-            break;
-
-        case 0x07:
-            m->accumulator = ~m->accumulator;
-            OPCODE("NOT")
-            break;
-
-        case 0x04:
-            OPCODE("AND")
+            m->status |= (1 << 1);
             m->accumulator &= operand;
-            // Set the zero flag.
+
+        } else {
+            m->accumulator += operand;
+
             if (m->accumulator == 0) {
                 m->status |= 1;
             }
+        }
 
-            break;
+        OPCODE("ADD");
+        break;
 
-        case 0x05:
-            OPCODE("OR")
-            m->accumulator |= operand;
+    case 0x01:
+        OPCODE("ADC")
 
-            // Set the zero flag.
-            if (m->accumulator == 0) {
-                m->status |= 1;
-            }
+        // TODO: Reset carry flag
+        m->accumulator += operand + ((m->status >> 1) & 1);
 
-            break;
+        break;
 
-        case 0x06:
-            OPCODE("XOR")
-            m->accumulator ^= operand;
-            // Set the zero flag.
-            if (m->accumulator == 0) {
-                m->status |= 1;
-            }
-            break;
+    case 0x02:
+        m->accumulator -= operand;
+        OPCODE("SUB")
+        break;
 
-        // Load value from memory to accumulator
-        case 0x09:
-            OPCODE("LDM")
-            m->accumulator = read_memory(m, operand);
-            break;
+    case 0x03:
+        OPCODE("SBC")
+        break;
 
-        // Store value in accumulator to memory
-        case 0x0A:
-            OPCODE("STM")
-            write_memory(m, operand, m->accumulator);
-            break;
+    case 0x14:
+        m->accumulator = operand;
+        OPCODE("LDA")
+        break;
 
-        case 0x0B:
-            OPCODE("JMP")
+    case 0x15:
+        m->b = operand;
+        OPCODE("LDB")
+        break;
+    case 0x16:
+        m->h = operand;
+        OPCODE("LDH")
+        break;
+
+    case 0x17:
+        m->l = operand;
+        OPCODE("LDL")
+        break;
+
+    case 0x2C:
+        m->accumulator = m->b;
+        OPCODE("LDAB")
+        break;
+
+    case 0x2D:
+        m->b = m->accumulator;
+        OPCODE("LDBA")
+        break;
+
+    case 0x2E:
+        m->accumulator = m->l;
+        OPCODE("LDAL")
+        break;
+    case 0x2F:
+        m->l = m->accumulator;
+        OPCODE("LDLA")
+        break;
+
+    case 0x07:
+        m->accumulator = ~m->accumulator;
+        OPCODE("NOT")
+        break;
+
+    case 0x04:
+        OPCODE("AND")
+        m->accumulator &= operand;
+        // Set the zero flag.
+        if (m->accumulator == 0) {
+            m->status |= 1;
+        }
+
+        break;
+
+    case 0x05:
+        OPCODE("OR")
+        m->accumulator |= operand;
+
+        // Set the zero flag.
+        if (m->accumulator == 0) {
+            m->status |= 1;
+        }
+
+        break;
+
+    case 0x06:
+        OPCODE("XOR")
+        m->accumulator ^= operand;
+        // Set the zero flag.
+        if (m->accumulator == 0) {
+            m->status |= 1;
+        }
+        break;
+
+    // Load value from memory to accumulator
+    case 0x09:
+        OPCODE("LDM")
+        m->accumulator = read_memory(m, operand);
+        break;
+
+    // Store value in accumulator to memory
+    case 0x0A:
+        OPCODE("STM")
+        write_memory(m, operand, m->accumulator);
+        break;
+
+    case 0x0B:
+        OPCODE("JMP")
+        m->pc = operand;
+        break;
+
+    case 0x0C:
+        OPCODE("JPI")
+        m->pc = read_memory(m, operand);
+        break;
+
+    case 0x0D:
+        OPCODE("JPZ")
+        // First bit set. jump
+        if (m->status & 1) {
             m->pc = operand;
-            break;
-
-        case 0x0C:
-            OPCODE("JPI")
-            m->pc = read_memory(m, operand);
-            break;
-
-        case 0x0D:
-            OPCODE("JPZ")
-            // First bit set. jump
-            if (m->status & 1) {
-                m->pc = operand;
-            }
-            break;
-
-        case 0x0E:
-            OPCODE("JPM")
-            if ((m->accumulator >> 8) & 1) {
-                m->pc = operand;
-            }
-            break;
-
-        case 0x0F:
-            OPCODE("JPC")
-            if ((m->status >> 1) & 1) {
-                m->pc = operand;
-            }
-            break;
-
-        case 0x12:
-            OPCODE("JPE")
-            if ((m->status >> 4) & 1) {
-                m->pc = operand;
-            }
-            break;
-
-        case 0x13:
-            OPCODE("JPO")
-            if ((m->status >> 4) & 0) {
-                m->pc = operand;
-            }
-            break;
-
-        case 0x11: {
-            OPCODE("CMP")
-            // Set the carry flag, this is wrong
-            int8_t tmp;
-            tmp = (uint8_t)(m->accumulator - operand);
-            if (tmp == 0) {
-                m->status |= 1;
-            } else {
-                m->status &= 0;
-            }
-            break;
-
-        // TODO: Clean these up when we have more consistent
-        // instruction set as we can reduce this repeated
-        // code
-        case 0x30: {
-            OPCODE("INCA")
-            m->accumulator++;
-            break;
         }
-        case 0x31: {
-            OPCODE("INCB")
-            m->b++;
-            break;
-        }
-        case 0x32: {
-            OPCODE("INCH")
-            m->h++;
-            break;
-        }
-        case 0x33: {
-            OPCODE("INCL")
-            m->l++;
-            break;
-        }
-        case 0x19:
-            OPCODE("STA")
-            write_memory(m, operand, m->accumulator);
-            break;
-        case 0x20:
-            OPCODE("STB")
-            write_memory(m, operand, m->b);
-            break;
+        break;
 
-        case 0x21:
-            OPCODE("STAX")
-            uint16_t rm = (m->h << 8) + m->l;
-            write_memory(m, rm, m->accumulator);
-            break;
-
-        case 0x42:
-            OPCODE("PUSHA")
-            m->memory[m->sp++] = m->accumulator;
-            printf("\tPushed A: %04X %04X\n",
-                   m->accumulator, m->memory[m->sp - 1]);
-            break;
-        case 0x43:
-            OPCODE("PUSHB")
-            m->memory[m->sp++] = m->b;
-            break;
-        case 0x44:
-            OPCODE("POPA")
-            m->accumulator = m->memory[--m->sp];
-            printf("\tPopped A: %04X %04X %04x\n",
-                   m->accumulator, m->memory[m->sp], m->sp);
-            break;
-        case 0x45:
-            OPCODE("POPB")
-            m->b = m->memory[--m->sp];
-            break;
-
-        case 0xFF:
-            running = 0;
-            OPCODE("HLT");
-            break;
+    case 0x0E:
+        OPCODE("JPM")
+        if ((m->accumulator >> 8) & 1) {
+            m->pc = operand;
         }
-        }
+        break;
 
-        print_machine_status(m);
-        // usleep(1000); // 1MHz/1000 = 1Khz
+    case 0x0F:
+        OPCODE("JPC")
+        if ((m->status >> 1) & 1) {
+            m->pc = operand;
+        }
+        break;
+
+    case 0x12:
+        OPCODE("JPE")
+        if ((m->status >> 4) & 1) {
+            m->pc = operand;
+        }
+        break;
+
+    case 0x13:
+        OPCODE("JPO")
+        if ((m->status >> 4) & 0) {
+            m->pc = operand;
+        }
+        break;
+
+    case 0x11: {
+        OPCODE("CMP")
+        // Set the carry flag, this is wrong
+        int8_t tmp;
+        tmp = (uint8_t)(m->accumulator - operand);
+        if (tmp == 0) {
+            m->status |= 1;
+        } else {
+            m->status &= 0;
+        }
+        break;
+
+    // TODO: Clean these up when we have more consistent
+    // instruction set as we can reduce this repeated
+    // code
+    case 0x30: {
+        OPCODE("INCA")
+        m->accumulator++;
+        break;
+    }
+    case 0x31: {
+        OPCODE("INCB")
+        m->b++;
+        break;
+    }
+    case 0x32: {
+        OPCODE("INCH")
+        m->h++;
+        break;
+    }
+    case 0x33: {
+        OPCODE("INCL")
+        m->l++;
+        break;
+    }
+    case 0x19:
+        OPCODE("STA")
+        write_memory(m, operand, m->accumulator);
+        break;
+    case 0x20:
+        OPCODE("STB")
+        write_memory(m, operand, m->b);
+        break;
+
+    case 0x21: {
+        OPCODE("STAX")
+        uint16_t rm = (m->h << 8) + m->l;
+        write_memory(m, rm, m->accumulator);
+        break;
+    }
+
+    case 0x42:
+        OPCODE("PUSHA")
+        m->memory[m->sp++] = m->accumulator;
+        printf("\tPushed A: %04X %04X\n", m->accumulator,
+               m->memory[m->sp - 1]);
+        break;
+    case 0x43:
+        OPCODE("PUSHB")
+        m->memory[m->sp++] = m->b;
+        break;
+    case 0x44:
+        OPCODE("POPA")
+        m->accumulator = m->memory[--m->sp];
+        printf("\tPopped A: %04X %04X %04x\n",
+               m->accumulator, m->memory[m->sp], m->sp);
+        break;
+    case 0x45:
+        OPCODE("POPB")
+        m->b = m->memory[--m->sp];
+        break;
+
+    case 0xFF:
+        m->halted = 1;
+        OPCODE("HLT");
+        break;
+    }
     }
 }
 
@@ -433,14 +428,31 @@ int main(int argc, char **argv) {
         die("no program specified");
     }
 
-    struct machine m = {.device_count = 0, .sp = 0x1000};
+    // usage
+    // -v: Verbose
+    // -s: Step
+
+    struct machine mstack = {
+        .device_count = 0,
+        .sp = 0x00B0,
+    };
+
+    struct machine *m = &mstack;
 
     printf("Loading program %s\n", argv[1]);
-    load_file(&m, argv[1]);
+    load_file(m, argv[1]);
 
-    register_video_device(&m);
+    register_video_device(m);
 
-    run(&m);
+    init(m);
 
+    while (!m->halted) {
+        step(m);
+#if DEBUG
+        print_machine_status(m);
+#endif
+    }
+
+    dump_memory(m);
     return EXIT_SUCCESS;
 }
