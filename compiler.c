@@ -1,3 +1,4 @@
+#include "file.h"
 #include "util.h"
 #include <ctype.h>
 #include <stdarg.h>
@@ -29,6 +30,7 @@ enum state {
 };
 
 #define MAX_ARG_LEN 255
+#define MAX_SYMBOLS 255
 
 enum tokens { TINST, TOPERAND, TLABEL, TDIR, TADDR };
 
@@ -48,10 +50,13 @@ struct ast_operand {
     int type;
 };
 
+enum ast_type { AST_INSTRUCTION, AST_LABEL };
+
 struct ast_node {
     // Opcode
     char opcode[255];
     char label[255];
+    unsigned int type;
 
     // Operands, max of 4
     size_t argn;
@@ -66,29 +71,71 @@ struct ast {
     size_t total;
 };
 
-void dump_buffer(char *path, uint8_t *buffer, int length) {
-    if (!path) {
-        die("dump_buffer: no path specified");
+struct symbol {
+    char name[255];
+    size_t line; // AST line
+};
+
+struct symbol_table {
+    struct symbol symbols[MAX_SYMBOLS];
+};
+
+unsigned int hash(const char *str, unsigned tableSize) {
+    unsigned int hash = 0;
+    while (*str) {
+        hash = (hash << 5) + *str++;
+    }
+    return hash % tableSize;
+}
+
+struct symbol_table *init_symbol_table() {
+
+    struct symbol_table *st =
+        xmalloc(sizeof(struct symbol_table));
+
+    memset(st, 0, sizeof(struct symbol_table));
+
+    return st;
+}
+
+void add_symbol(struct symbol_table *st, const char *name,
+                size_t line) {
+    unsigned int index = hash(name, MAX_SYMBOLS);
+
+    struct symbol *sym = &st->symbols[index];
+    sym->line = line;
+    strcpy(sym->name, name);
+}
+
+size_t get_symbol_line(struct symbol_table *st,
+                       const char *name) {
+    unsigned int index = hash(name, MAX_SYMBOLS);
+    return st->symbols[index].line;
+}
+
+// Build a line based symbol table
+struct symbol_table *build_symbol_table(struct ast *ast) {
+    struct symbol_table *st = init_symbol_table();
+
+    size_t line = 0;
+
+    // Build symbol table from ASt
+    for (size_t i = 0; i < ast->total; i++) {
+        struct ast_node *n = &ast->nodes[i];
+
+        // got a label? store the line
+        if (n->type == AST_LABEL) {
+            add_symbol(st, n->label, line);
+        } else if (n->type == AST_INSTRUCTION) {
+            line++;
+        }
     }
 
-    if (!buffer) {
-        die("dump_buffer: no buffer");
-    }
+    return st;
+}
 
-    if (length <= 0) {
-        die("dump_buffer: zero length buffer");
-    }
-
-    FILE *file;
-    file = fopen(path, "wb");
-
-    if (!file) {
-        die("dump_buffer: couldn't open %s for writing",
-            path);
-    }
-
-    fwrite(buffer, length, 1, file);
-    fclose(file);
+void free_symbol_table(struct symbol_table *st) {
+    free(st);
 }
 
 void add_list(struct token *root, struct token *next) {
@@ -151,7 +198,7 @@ void free_list(struct token *root) {
     }
 }
 
-void dump_list(struct token *root) {
+void dump_tokens(struct token *root) {
     struct token *tmp = root;
 
     do {
@@ -168,30 +215,6 @@ void dump_list(struct token *root) {
             printf("Address: %s\n", tmp->s_val);
         }
     } while ((tmp = tmp->next) != NULL);
-}
-
-void load_file(char *path, char **buffer) {
-    if (strlen(path) <= 0) {
-        die("load_file: no path to load");
-    }
-
-    FILE *file;
-    long length;
-
-    file = fopen(path, "r");
-
-    if (!file) {
-        die("load_file: file doesn't exist");
-    }
-
-    fseek(file, 0, SEEK_END);
-    length = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    *buffer = xmalloc(length + 1);
-    fread(*buffer, 1, length, file);
-
-    fclose(file);
 }
 
 struct token *tokenize(char *buffer) {
@@ -276,11 +299,6 @@ struct token *tokenize(char *buffer) {
     return t_root;
 }
 
-struct assembly {
-    uint8_t *buffer;
-    int16_t buf_len;
-};
-
 struct ast *parse_tokens(struct token *root) {
     struct token *tmp = root;
     struct ast *ast = xmalloc(sizeof(struct ast));
@@ -289,9 +307,12 @@ struct ast *parse_tokens(struct token *root) {
 
     do {
 
-        if (tmp->type == TINST) {
+        // TODO: Directives will be handled sligthly
+        // differently but this works for now
+        if (tmp->type == TINST || tmp->type == TDIR) {
             struct ast_node *n = &ast->nodes[ast->total++];
             strcpy(n->opcode, tmp->s_val);
+            n->type = AST_INSTRUCTION;
 
             struct token *op = tmp->next;
 
@@ -321,11 +342,10 @@ struct ast *parse_tokens(struct token *root) {
                 op = op->next;
             }
 
-        } else if (tmp->type == TOPERAND) {
-        } else if (tmp->type == TDIR) {
         } else if (tmp->type == TLABEL) {
             struct ast_node *n = &ast->nodes[ast->total++];
             strcpy(n->label, tmp->s_val);
+            n->type = AST_LABEL;
         } else if (tmp->type == TADDR) {
         }
     } while ((tmp = tmp->next) != NULL);
@@ -333,13 +353,138 @@ struct ast *parse_tokens(struct token *root) {
     return ast;
 }
 
-int free_assembly(struct assembly *build) {
-    if (!build) {
-        return -1;
+enum { SINST = 1, SOP = 1 };
+
+uint8_t reg_to_offset(char reg) {
+    switch (reg) {
+    case 'a':
+    case 'A':
+        return 0x07;
+    case 'b':
+    case 'B':
+        return 0x00;
+    case 'h':
+    case 'H':
+        return 0x04;
+    case 'l':
+    case 'L':
+        return 0x05;
     }
-    free(build->buffer);
-    free(build);
+    return 0x00;
+}
+
+// first operand to offset from base instruction
+// e.g mov a,b where does mova start from mov.
+// relative to first base instruction
+uint8_t reg_to_index(char reg) {
+
+    // LD
+    switch (reg) {
+    case 'a':
+    case 'A':
+        return 0x70;
+    case 'b':
+    case 'B':
+        return 0x40;
+    case 'h':
+    case 'H':
+    case 'l':
+    case 'L':
+        return 0x60;
+    }
+    return 0x00;
+}
+
+struct instruction {
+    char mnemonic[6];
+    uint8_t opcode;
+};
+
+#define X(name, value)                                     \
+    { #name, value }
+
+// Base instructions
+struct instruction instructions[] = {
+    X(MOV, 0x40),  X(MOVA, 0x78), X(MOVB, 0x40),
+    X(MOVH, 0x60), X(MOVL, 0x68),
+
+    X(ADDA, 0x87), X(ADDB, 0x80), X(ADDH, 0x84),
+    X(ADDL, 0x85),
+
+    X(ADI, 0xC6)};
+
+// 0x87 ADD A
+// 0x80 ADD B
+// 0x84 ADD H
+// 0x85 ADD L
+//
+// 0x40 -> 0x4F LD
+// 0x50-> 0x5F  LD
+// 0x6F > 0x6F  LD
+// 0x7F > 0x7F  LD
+//
+// 0x40 MOV B,B
+// 0x44 MOV B,H
+// 0x45 MOV B,L
+// 0x47 MOV B,A
+//
+// 0x60 MOV H,B
+// 0x65 MOV H,L
+// 0x67 MOV H,A
+//
+// So the pattern for the 8080 is:
+// base e.g 0x40 = B dest and
+
+static inline struct instruction *
+lookup_base_mnem(char *mnemonic) {
+
+    int total =
+        sizeof(instructions) / sizeof(struct instruction);
+
+    for (int i = 0; i < total; i++) {
+        if (strcasecmp(mnemonic,
+                       instructions[i].mnemonic) == 0) {
+            return &instructions[i];
+        }
+    }
+
     return 0;
+}
+
+void translate(struct ast *ast, struct symbol_table *st) {
+
+    for (size_t i = 0; i < ast->total; i++) {
+
+        // for each line, generate machine code,
+        //  e.g LD A,B = LDA B
+        //  LD A,0xff = LDA 0xff
+
+        struct ast_node *n = &ast->nodes[i];
+
+        // TODO: LD A,0xff -> LDI A 0xff
+        // TODO: ADD B -> ADDB
+        if (n->argn > 0) {
+            // Get the base instruction and add the offset
+            // of a register
+            if (n->operands[0].type == TREGISTER) {
+
+                struct instruction *inst =
+                    lookup_base_mnem(n->opcode);
+                if (!inst) {
+                    continue;
+                }
+
+                // Determine row/col
+                uint8_t src =
+                    reg_to_offset(n->operands[0].value[0]);
+                uint8_t dst =
+                    reg_to_index(n->operands[1].value[0]);
+
+                uint8_t opcode = inst->opcode + src + dst;
+                printf("%s %x\n", n->opcode, opcode);
+            }
+        }
+    }
 }
 
 int main(int argc, char *argv[argc + 1]) {
@@ -364,7 +509,10 @@ int main(int argc, char *argv[argc + 1]) {
 
     for (size_t i = 0; i <= ast->total; i++) {
         struct ast_node *n = &ast->nodes[i];
-        printf("%5s %s ", n->opcode, n->label);
+        char *val =
+            n->type == AST_LABEL ? n->label : n->opcode;
+
+        printf("%zu: %5s ", i, val);
         printf("(%zu)\t", n->argn);
 
         for (size_t j = 0; j < n->argn; j++) {
@@ -383,13 +531,20 @@ int main(int argc, char *argv[argc + 1]) {
         printf("\n");
     }
 
-    free(ast);
-    // 1. Tokenize.
-    // 2. Parse and build the AST
-    // 3. Generate symbol table
-    // 4. Generate binary output
+    struct symbol_table *st = build_symbol_table(ast);
 
-    // Parse now.
+    for (size_t x = 0; x <= MAX_SYMBOLS; x++) {
+        if (strlen(st->symbols[x].name) > 1) {
+            printf("S: %s Line: %zu\n", st->symbols[x].name,
+                   st->symbols[x].line);
+        }
+    }
+
+    translate(ast, st);
+
+    free_symbol_table(st);
+
+    free(ast);
     free_list(root);
 
     return 0;

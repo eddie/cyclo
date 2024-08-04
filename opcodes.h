@@ -44,6 +44,7 @@ static struct instruction instructions[] = {
     {"HLT", 0xFF},
 
     // Load A,B from memory or immediate
+    {"LD", 0x14},
     {"LDA", 0x14},
     {"LDB", 0x15},
     {"LDH", 0x16},

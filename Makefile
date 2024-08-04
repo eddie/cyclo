@@ -9,7 +9,7 @@ all: assembler emulator compiler
 assembler: assembler.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-compiler: compiler.c util.o
+compiler: compiler.c util.o file.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 emulator: emulator.c video.o
