@@ -1,5 +1,4 @@
 
-
   .org 0xff
 
 dat: db 0, "hello",0 ,0
@@ -12,8 +11,10 @@ some_label:
   ld b,a
   ld h,l
   ld l,h
-  add a,0xff
-  add c,[b]
+  ld l,0xff
+  add a
+  add l
+  add 0x22
   jnz [some_label]
   hlt
 

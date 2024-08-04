@@ -23,6 +23,11 @@
 
 #define EQUALS(a, b) (strcasecmp(a, b) == 0)
 
+#define ASSERT_ARG_COUNT(ast_node, count, name)            \
+    if (ast_node->argn != count) {                         \
+        SYNTAX_ERROR("Invalid argument count");            \
+    }
+
 enum state {
     PROGRAM,
     INSTRUCTION,
@@ -359,6 +364,9 @@ struct ast *parse_tokens(struct token *root) {
 
 enum { SINST = 1, SOP = 1 };
 
+// Following a common pattern in the 8080 instruction state
+// some src/dest pairs have a fixed pattern. .eg A Last, B
+// first. This can be reused.
 uint8_t reg_to_offset(char reg) {
     switch (reg) {
     case 'a':
@@ -381,7 +389,7 @@ uint8_t reg_to_offset(char reg) {
 // e.g mov a,b where does mova start from mov.
 // relative to first base instruction
 // mov = 0x40
-uint8_t reg_dest_offset(char reg) {
+uint8_t ld_reg_dest_offset(char reg) {
 
     // LD
     switch (reg) {
@@ -400,6 +408,28 @@ uint8_t reg_dest_offset(char reg) {
     return 0x00;
 }
 
+uint8_t ldi_reg_dest_offset(char reg) {
+
+    uint8_t base = 0x06;
+
+    // LDI base 0x06
+    switch (reg) {
+    case 'b':
+    case 'B':
+        return 0x06;
+    case 'a':
+    case 'A':
+        return 0x3E;
+    case 'h':
+    case 'H':
+        return 0x26;
+    case 'l':
+    case 'L':
+        return 0x2E;
+    }
+    return 0x00;
+}
+
 struct instruction {
     char mnemonic[6];
     uint8_t opcode;
@@ -410,34 +440,12 @@ struct instruction {
 
 // Base instructions
 struct instruction instructions[] = {
-    X(LD, 0x40),
+    X(LD, 0x40),   X(ADD, 0x80),
 
     X(ADDA, 0x87), X(ADDB, 0x80),
     X(ADDH, 0x84), X(ADDL, 0x85),
 
     X(ADI, 0xC6)};
-
-// 0x87 ADD A
-// 0x80 ADD B
-// 0x84 ADD H
-// 0x85 ADD L
-//
-// 0x40 -> 0x4F LD
-// 0x50-> 0x5F  LD
-// 0x6F > 0x6F  LD
-// 0x7F > 0x7F  LD
-//
-// 0x40 MOV B,B
-// 0x44 MOV B,H
-// 0x45 MOV B,L
-// 0x47 MOV B,A
-//
-// 0x60 MOV H,B
-// 0x65 MOV H,L
-// 0x67 MOV H,A
-//
-// So the pattern for the 8080 is:
-// base e.g 0x40 = B dest and
 
 static inline struct instruction *
 lookup_base_mnem(char *mnemonic) {
@@ -455,60 +463,74 @@ lookup_base_mnem(char *mnemonic) {
     return 0;
 }
 
+// TODO: JMPs using symbol table lookup.
+// Calculate address using line * (instruction
+// size + operand sizes)
 void translate(struct ast *ast, struct symbol_table *st) {
+
+    uint16_t address = 0;
 
     for (size_t i = 0; i < ast->total; i++) {
 
-        // for each line, generate machine code,
-        //  e.g LD A,B = LDA B
-        //  LD A,0xff = LDA 0xff
         struct ast_node *n = &ast->nodes[i];
+        struct ast_operand *op = &n->operands[0];
+        struct ast_operand *op2 = &n->operands[1];
 
-        // Handle LD X,X register to register
+        // Handle LD X,X register to register or value
         if (EQUALS(n->opcode, "LD")) {
 
-            if (n->argn != 2) {
-                SYNTAX_ERROR("LD requires 2 operands");
-            }
+            ASSERT_ARG_COUNT(n, 2, "LD");
 
             struct instruction *inst =
                 lookup_base_mnem("LD");
 
-            struct ast_operand *op = &n->operands[0];
-            struct ast_operand *op2 = &n->operands[1];
+            // LDI
+            if (op2->type == TVALUE) {
+                uint8_t dst =
+                    ldi_reg_dest_offset(op->value[0]);
+                uint8_t opcode = dst;
+                printf("%4x: ldi(%x) %c %s \n", address,
+                       opcode, op->value[0], op2->value);
+            } else {
+                uint8_t dst =
+                    ld_reg_dest_offset(op->value[0]);
+                uint8_t src = reg_to_offset(op2->value[0]);
+                uint8_t opcode = inst->opcode + src + dst;
 
-            if (!inst) {
-                continue;
+                printf("%4x: ld%c(%x) %c  \n", address,
+                       op->value[0], opcode, op2->value[0]);
             }
 
-            uint8_t dst = reg_dest_offset(op->value[0]);
-            uint8_t src = reg_to_offset(op2->value[0]);
-            uint8_t opcode = inst->opcode + src + dst;
+            address += 24;
+        } else if (EQUALS(n->opcode, "ADD")) {
 
-            printf("%s %x \n", n->opcode, opcode);
+            ASSERT_ARG_COUNT(n, 1, "ADD");
+
+            // ADD x -> ADI
+            if (op->type == TVALUE) {
+
+                struct instruction *inst =
+                    lookup_base_mnem("ADI");
+
+                printf("%4x: addi(%x) %s\n", address,
+                       inst->opcode, op->value);
+
+            } else {
+                struct instruction *inst =
+                    lookup_base_mnem("ADD");
+                uint8_t dst = reg_to_offset(op->value[0]);
+                uint8_t opcode = inst->opcode + dst;
+
+                printf("%4x: add%c(%x) \n", address,
+                       op->value[0], opcode);
+            }
+
+            address += 24;
         }
     }
 }
 
-int main(int argc, char *argv[argc + 1]) {
-    if (argc < 2) {
-        die("no assembly file specified");
-    }
-
-    if (argc < 3) {
-        die("no output file specified");
-    }
-
-    printf("Parsing %s\n", argv[1]);
-
-    char *buffer;
-    load_file(argv[1], &buffer);
-    xfree(buffer);
-
-    struct token *root;
-    root = tokenize(buffer);
-
-    struct ast *ast = parse_tokens(root);
+void print_ast(struct ast *ast) {
 
     for (size_t i = 0; i <= ast->total; i++) {
         struct ast_node *n = &ast->nodes[i];
@@ -533,8 +555,9 @@ int main(int argc, char *argv[argc + 1]) {
         }
         printf("\n");
     }
+}
 
-    struct symbol_table *st = build_symbol_table(ast);
+void print_symbols(struct symbol_table *st) {
 
     for (size_t x = 0; x <= MAX_SYMBOLS; x++) {
         if (strlen(st->symbols[x].name) > 1) {
@@ -542,6 +565,35 @@ int main(int argc, char *argv[argc + 1]) {
                    st->symbols[x].line);
         }
     }
+}
+
+int main(int argc, char *argv[argc + 1]) {
+    if (argc < 2) {
+        die("no assembly file specified");
+    }
+
+    if (argc < 3) {
+        die("no output file specified");
+    }
+
+    printf("Parsing %s\n", argv[1]);
+
+    char *buffer;
+    load_file(argv[1], &buffer);
+    xfree(buffer);
+
+    struct token *root;
+    root = tokenize(buffer);
+
+    struct ast *ast = parse_tokens(root);
+
+    struct symbol_table *st = build_symbol_table(ast);
+
+    printf("\nAST\n");
+    print_ast(ast);
+    printf("\nSymbols\n");
+    print_symbols(st);
+    printf("\nMachine code\n");
 
     translate(ast, st);
 
