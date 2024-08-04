@@ -19,6 +19,10 @@
         type, inst->mnemonic, inst->opcode, pc, width,     \
         val);
 
+#define SYNTAX_ERROR(msg) die("Syntax error: %s", msg);
+
+#define EQUALS(a, b) (strcasecmp(a, b) == 0)
+
 enum state {
     PROGRAM,
     INSTRUCTION,
@@ -376,13 +380,14 @@ uint8_t reg_to_offset(char reg) {
 // first operand to offset from base instruction
 // e.g mov a,b where does mova start from mov.
 // relative to first base instruction
-uint8_t reg_to_index(char reg) {
+// mov = 0x40
+uint8_t reg_dest_offset(char reg) {
 
     // LD
     switch (reg) {
     case 'a':
     case 'A':
-        return 0x70;
+        return 0x38;
     case 'b':
     case 'B':
         return 0x40;
@@ -390,7 +395,7 @@ uint8_t reg_to_index(char reg) {
     case 'H':
     case 'l':
     case 'L':
-        return 0x60;
+        return 0x28;
     }
     return 0x00;
 }
@@ -405,11 +410,10 @@ struct instruction {
 
 // Base instructions
 struct instruction instructions[] = {
-    X(MOV, 0x40),  X(MOVA, 0x78), X(MOVB, 0x40),
-    X(MOVH, 0x60), X(MOVL, 0x68),
+    X(LD, 0x40),
 
-    X(ADDA, 0x87), X(ADDB, 0x80), X(ADDH, 0x84),
-    X(ADDL, 0x85),
+    X(ADDA, 0x87), X(ADDB, 0x80),
+    X(ADDH, 0x84), X(ADDL, 0x85),
 
     X(ADI, 0xC6)};
 
@@ -458,31 +462,30 @@ void translate(struct ast *ast, struct symbol_table *st) {
         // for each line, generate machine code,
         //  e.g LD A,B = LDA B
         //  LD A,0xff = LDA 0xff
-
         struct ast_node *n = &ast->nodes[i];
 
-        // TODO: LD A,0xff -> LDI A 0xff
-        // TODO: ADD B -> ADDB
-        if (n->argn > 0) {
-            // Get the base instruction and add the offset
-            // of a register
-            if (n->operands[0].type == TREGISTER) {
+        // Handle LD X,X register to register
+        if (EQUALS(n->opcode, "LD")) {
 
-                struct instruction *inst =
-                    lookup_base_mnem(n->opcode);
-                if (!inst) {
-                    continue;
-                }
-
-                // Determine row/col
-                uint8_t src =
-                    reg_to_offset(n->operands[0].value[0]);
-                uint8_t dst =
-                    reg_to_index(n->operands[1].value[0]);
-
-                uint8_t opcode = inst->opcode + src + dst;
-                printf("%s %x\n", n->opcode, opcode);
+            if (n->argn != 2) {
+                SYNTAX_ERROR("LD requires 2 operands");
             }
+
+            struct instruction *inst =
+                lookup_base_mnem("LD");
+
+            struct ast_operand *op = &n->operands[0];
+            struct ast_operand *op2 = &n->operands[1];
+
+            if (!inst) {
+                continue;
+            }
+
+            uint8_t dst = reg_dest_offset(op->value[0]);
+            uint8_t src = reg_to_offset(op2->value[0]);
+            uint8_t opcode = inst->opcode + src + dst;
+
+            printf("%s %x \n", n->opcode, opcode);
         }
     }
 }
