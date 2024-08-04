@@ -80,3 +80,14 @@ int htoi(const char s[]) {
 
     return n;
 }
+
+void print_memory(uint8_t *memory, int size) {
+    int i;
+
+    for (i = 0; i < size; i++) {
+        if ((i % 0x10) == 0) {
+            printf("\n %04X | ", i);
+        }
+        printf("%02X ", memory[i]);
+    }
+}

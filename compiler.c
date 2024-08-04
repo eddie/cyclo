@@ -207,11 +207,10 @@ void free_list(struct token *root) {
     }
 }
 
-void dump_tokens(struct token *root) {
+void print_tokens(struct token *root) {
     struct token *tmp = root;
 
     do {
-
         if (tmp->type == TINST) {
             printf("Instruction: %s\n", tmp->s_val);
         } else if (tmp->type == TOPERAND) {
@@ -410,8 +409,6 @@ uint8_t ld_reg_dest_offset(char reg) {
 
 uint8_t ldi_reg_dest_offset(char reg) {
 
-    uint8_t base = 0x06;
-
     // LDI base 0x06
     switch (reg) {
     case 'b':
@@ -463,11 +460,54 @@ lookup_base_mnem(char *mnemonic) {
     return 0;
 }
 
+size_t calculate_machine_code_len(struct ast *ast,
+                                  struct symbol_table *st) {
+    size_t len = 0;
+
+    // Naive, 3 bytes per line
+    // TODO: Calculate storage size of db values
+    len += 3 * ast->total;
+
+    return len;
+}
+
+struct assembly {
+    uint8_t *buffer;
+    uint16_t len;
+};
+
+#define WRITE_OPERAND(memory, operand)                     \
+    memory[address++] = (operand >> 8) & 0xFF;             \
+    memory[address++] = operand;
+
+#define WRITE_OPERAND_STR(memory, opvalue)                 \
+    uint16_t operand = htoi(opvalue);                      \
+    memory[address++] = (operand >> 8) & 0xFF;             \
+    memory[address++] = operand;
+
+#define WRITE_NOOPERAND(memory)                            \
+    memory[address++] = 0x00;                              \
+    memory[address++] = 0x00;
+
+#define WRITE_OPCODE(memory, opcode)                       \
+    memory[address++] = opcode;
+
 // TODO: JMPs using symbol table lookup.
 // Calculate address using line * (instruction
 // size + operand sizes)
-void translate(struct ast *ast, struct symbol_table *st) {
+struct assembly *translate(struct ast *ast,
+                           struct symbol_table *st) {
 
+    struct assembly *build =
+        xmalloc(sizeof(struct assembly));
+
+    // Allocate buffer for assembly
+    build->len = calculate_machine_code_len(ast, st);
+    build->buffer = xmalloc(build->len);
+
+    memset(build->buffer, 0, build->len);
+
+    uint8_t *memory = build->buffer;
     uint16_t address = 0;
 
     for (size_t i = 0; i < ast->total; i++) {
@@ -491,6 +531,9 @@ void translate(struct ast *ast, struct symbol_table *st) {
                 uint8_t opcode = dst;
                 printf("%4x: ldi(%x) %c %s \n", address,
                        opcode, op->value[0], op2->value);
+
+                WRITE_OPCODE(memory, opcode);
+                WRITE_OPERAND_STR(memory, op->value);
             } else {
                 uint8_t dst =
                     ld_reg_dest_offset(op->value[0]);
@@ -499,9 +542,11 @@ void translate(struct ast *ast, struct symbol_table *st) {
 
                 printf("%4x: ld%c(%x) %c  \n", address,
                        op->value[0], opcode, op2->value[0]);
+
+                WRITE_OPCODE(memory, opcode);
+                WRITE_NOOPERAND(memory);
             }
 
-            address += 24;
         } else if (EQUALS(n->opcode, "ADD")) {
 
             ASSERT_ARG_COUNT(n, 1, "ADD");
@@ -512,8 +557,13 @@ void translate(struct ast *ast, struct symbol_table *st) {
                 struct instruction *inst =
                     lookup_base_mnem("ADI");
 
+                uint16_t opcode = inst->opcode;
+
                 printf("%4x: addi(%x) %s\n", address,
-                       inst->opcode, op->value);
+                       opcode, op->value);
+
+                WRITE_OPCODE(memory, opcode);
+                WRITE_OPERAND_STR(memory, op->value);
 
             } else {
                 struct instruction *inst =
@@ -523,11 +573,13 @@ void translate(struct ast *ast, struct symbol_table *st) {
 
                 printf("%4x: add%c(%x) \n", address,
                        op->value[0], opcode);
-            }
 
-            address += 24;
+                WRITE_OPCODE(memory, opcode);
+                WRITE_NOOPERAND(memory);
+            }
         }
     }
+    return build;
 }
 
 void print_ast(struct ast *ast) {
@@ -595,7 +647,8 @@ int main(int argc, char *argv[argc + 1]) {
     print_symbols(st);
     printf("\nMachine code\n");
 
-    translate(ast, st);
+    struct assembly *build = translate(ast, st);
+    print_memory(build->buffer, 50);
 
     free_symbol_table(st);
 
