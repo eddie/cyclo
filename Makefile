@@ -4,10 +4,13 @@ CFLAGS = -Wall -Wextra -std=c11 -pedantic -Wshadow
 LDFLAGS = -lc 
 
 
-all: assembler emulator
+all: assembler emulator compiler
 
 assembler: assembler.c
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+compiler: compiler.c util.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 emulator: emulator.c video.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -22,8 +25,9 @@ asm/%.bin: asm/%.asm
 	./assembler $< $@
 
 clean:
-	rm emulator
-	rm assembler
+	rm -f compiler
+	rm -f emulator
+	rm -f assembler
 	rm *.o
 
 format: $(SOURCES)

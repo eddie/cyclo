@@ -1,0 +1,7 @@
+
+
+
+
+lda 0x00
+sub 0x01
+  push a

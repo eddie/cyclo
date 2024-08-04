@@ -439,6 +439,7 @@ int16_t lookup_label_address(struct token *root,
 
         if (root->type == TLABEL) {
             if (strcasecmp(label, root->s_val) == 0) {
+                // TODO: Symbol table instead
                 return (int16_t)root->i_val;
             }
         }
@@ -597,6 +598,7 @@ struct assembly *assemble(struct token *tokens) {
                     // Store the address of the label in
                     // PM
                     op->i_val = (int16_t)pc - 2;
+                    // TODO: Use symbol table instead
                 } else {
                     // Store the address directly
                     memory[pc++] =
