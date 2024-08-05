@@ -13,6 +13,9 @@ some_label:
   ld l,h
   ld l,0xff
   add a
+  cmp b
+  cmp h
+  cmp 0xff
   add l
   add 0x22
   jnz [some_label]

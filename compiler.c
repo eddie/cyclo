@@ -40,6 +40,7 @@ enum state {
 
 #define MAX_ARG_LEN 255
 #define MAX_SYMBOLS 255
+#define MAX_SYMBOL_LEN 255
 
 enum tokens { TINST, TOPERAND, TLABEL, TDIR, TADDR };
 
@@ -113,7 +114,7 @@ void add_symbol(struct symbol_table *st, const char *name,
 
     struct symbol *sym = &st->symbols[index];
     sym->line = line;
-    strcpy(sym->name, name);
+    memcpy(sym->name, name, MAX_SYMBOL_LEN);
 }
 
 size_t get_symbol_line(struct symbol_table *st,
@@ -442,7 +443,9 @@ struct instruction instructions[] = {
     X(ADDA, 0x87), X(ADDB, 0x80),
     X(ADDH, 0x84), X(ADDL, 0x85),
 
-    X(ADI, 0xC6)};
+    X(HLT, 0x76),  X(ADI, 0xC6),
+
+    X(CMP, 0xB8),  X(CPI, 0xFE)};
 
 static inline struct instruction *
 lookup_base_mnem(char *mnemonic) {
@@ -467,6 +470,9 @@ size_t calculate_machine_code_len(struct ast *ast,
     // Naive, 3 bytes per line
     // TODO: Calculate storage size of db values
     len += 3 * ast->total;
+
+    // Add HLT
+    len += 1;
 
     return len;
 }
@@ -577,9 +583,60 @@ struct assembly *translate(struct ast *ast,
                 WRITE_OPCODE(memory, opcode);
                 WRITE_NOOPERAND(memory);
             }
+        } else if (EQUALS(n->opcode, "CMP")) {
+            // CMP A / CMP 0xff -> CPI
+            if (op->type == TVALUE) {
+                struct instruction *inst =
+                    lookup_base_mnem("CPI");
+
+                uint16_t opcode = inst->opcode;
+                printf("%4x: cpi(%x) %s\n", address, opcode,
+                       op->value);
+
+                WRITE_OPCODE(memory, opcode);
+                WRITE_OPERAND_STR(memory, op->value);
+            } else {
+                struct instruction *inst =
+                    lookup_base_mnem("CMP");
+
+                uint8_t dst = reg_to_offset(op->value[0]);
+                uint8_t opcode = inst->opcode + dst;
+
+                printf("%4x: cmp%c(%x) \n", address,
+                       op->value[0], opcode);
+
+                WRITE_OPCODE(memory, opcode);
+                WRITE_NOOPERAND(memory);
+            }
         }
     }
+
+    // TODO:
+    // * JMP/JZ/JNZ/JPO/JPE etc.
+    // * CALL
+    // * RET
+    // * PUSH/POP
+    // * IN/OUT
+    // * XCHG
+    // * XRA
+    // * ORA
+    // * INR DCR (A/B/H/L)
+    // * STAX
+    // * INX
+    // * LXI SP/H
+    // * CMP
+
+    // Write HLT
+    struct instruction *inst = lookup_base_mnem("HLT");
+    WRITE_OPCODE(memory, inst->opcode);
+    WRITE_NOOPERAND(memory);
+
     return build;
+}
+
+void free_assembly(struct assembly *build) {
+    free(build->buffer);
+    free(build);
 }
 
 void print_ast(struct ast *ast) {
@@ -648,12 +705,13 @@ int main(int argc, char *argv[argc + 1]) {
     printf("\nMachine code\n");
 
     struct assembly *build = translate(ast, st);
-    print_memory(build->buffer, 50);
+    print_memory(build->buffer, build->len);
 
     free_symbol_table(st);
 
     free(ast);
     free_list(root);
+    free_assembly(build);
 
     return 0;
 }
