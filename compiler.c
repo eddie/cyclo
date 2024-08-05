@@ -22,6 +22,7 @@
 #define SYNTAX_ERROR(msg) die("Syntax error: %s", msg);
 
 #define EQUALS(a, b) (strcasecmp(a, b) == 0)
+#define NEQUALS(a, b) (strcasecmp(a, b) != 0)
 
 #define ASSERT_ARG_COUNT(ast_node, count, name)            \
     if (ast_node->argn != count) {                         \
@@ -84,6 +85,7 @@ struct ast {
 struct symbol {
     char name[255];
     size_t line; // AST line
+    uint16_t addr;
 };
 
 struct symbol_table {
@@ -104,16 +106,19 @@ struct symbol_table *init_symbol_table() {
         xmalloc(sizeof(struct symbol_table));
 
     memset(st, 0, sizeof(struct symbol_table));
+    memset(st->symbols, 0,
+           sizeof(struct symbol) * MAX_SYMBOLS);
 
     return st;
 }
 
 void add_symbol(struct symbol_table *st, const char *name,
-                size_t line) {
+                size_t line, size_t addr) {
     unsigned int index = hash(name, MAX_SYMBOLS);
 
     struct symbol *sym = &st->symbols[index];
     sym->line = line;
+    sym->addr = addr;
     memcpy(sym->name, name, MAX_SYMBOL_LEN);
 }
 
@@ -122,12 +127,18 @@ size_t get_symbol_line(struct symbol_table *st,
     unsigned int index = hash(name, MAX_SYMBOLS);
     return st->symbols[index].line;
 }
+size_t get_symbol_addr(struct symbol_table *st,
+                       const char *name) {
+    unsigned int index = hash(name, MAX_SYMBOLS);
+    return st->symbols[index].addr;
+}
 
 // Build a line based symbol table
 struct symbol_table *build_symbol_table(struct ast *ast) {
     struct symbol_table *st = init_symbol_table();
 
     size_t line = 0;
+    uint16_t addr = 0;
 
     // Build symbol table from ASt
     for (size_t i = 0; i < ast->total; i++) {
@@ -135,9 +146,14 @@ struct symbol_table *build_symbol_table(struct ast *ast) {
 
         // got a label? store the line
         if (n->type == AST_LABEL) {
-            add_symbol(st, n->label, line);
-        } else if (n->type == AST_INSTRUCTION) {
+            add_symbol(st, n->label, line, addr);
+        } else if (n->type == AST_INSTRUCTION &&
+                   (NEQUALS(n->opcode, "DB") &&
+                    NEQUALS(n->opcode, "org"))) {
             line++;
+            addr += 3;
+
+            printf("xxxxx: %s %d\n", n->opcode, addr);
         }
     }
 
@@ -478,10 +494,13 @@ struct instruction {
 
 // Base instructions
 struct instruction instructions[] = {
-    X(LD, 0x40),  X(ADD, 0x80), X(OR, 0xB0),  X(AND, 0xA0),
-    X(SUB, 0x90), X(ADC, 0x88), X(SBB, 0x98), X(XOR, 0xA8),
+    X(LD, 0x40),  X(ADD, 0x80), X(OR, 0xB0),   X(AND, 0xA0),
+    X(SUB, 0x90), X(ADC, 0x88), X(SBB, 0x98),  X(XOR, 0xA8),
 
     X(HLT, 0x76), X(ADI, 0xC6),
+
+    X(JMP, 0xC3), X(JNZ, 0xC2), X(JZ, 0xCA),   X(JP, 0xF2),
+    X(JPO, 0xE2), X(JPE, 0xEA), X(CALL, 0xCD),
 
     X(CMP, 0xB8), X(CPI, 0xFE)};
 
@@ -678,6 +697,22 @@ struct assembly *translate(struct ast *ast,
 
             WRITE_OPCODE(memory, opcode);
             WRITE_NOOPERAND(memory);
+        } else if (EQUALS(n->opcode, "JPZ") ||
+                   EQUALS(n->opcode, "JNZ") ||
+                   EQUALS(n->opcode, "JPO") ||
+                   EQUALS(n->opcode, "JPE") ||
+                   EQUALS(n->opcode, "JMP")) {
+
+            struct instruction *inst =
+                lookup_base_mnem(n->opcode);
+
+            uint16_t addr =
+                get_symbol_addr(st, n->operands[0].value);
+
+            WRITE_OPCODE(memory, inst->opcode);
+            WRITE_OPERAND(memory, addr);
+            printf("%4x: %s(%x) \n", address, n->opcode,
+                   addr);
         }
     }
 
