@@ -364,66 +364,106 @@ struct ast *parse_tokens(struct token *root) {
 
 enum { SINST = 1, SOP = 1 };
 
+uint8_t is_cela(char reg) {
+    switch (reg) {
+    case 'c':
+    case 'C':
+    case 'e':
+    case 'E':
+    case 'l':
+    case 'L':
+    case 'a':
+    case 'A':
+        return 1;
+    }
+    return 0;
+}
+
 // Following a common pattern in the 8080 instruction state
 // some src/dest pairs have a fixed pattern. .eg A Last, B
 // first. This can be reused.
 uint8_t reg_to_offset(char reg) {
+    uint8_t base = 0;
+
     switch (reg) {
-    case 'a':
-    case 'A':
-        return 0x07;
     case 'b':
     case 'B':
         return 0x00;
+        break;
     case 'h':
     case 'H':
         return 0x04;
+        break;
     case 'l':
     case 'L':
         return 0x05;
-    }
-    return 0x00;
-}
-
-// first operand to offset from base instruction
-// e.g mov a,b where does mova start from mov.
-// relative to first base instruction
-// mov = 0x40
-uint8_t ld_reg_dest_offset(char reg) {
-
-    // LD
-    switch (reg) {
-    case 'a':
-    case 'A':
-        return 0x38;
-    case 'b':
-    case 'B':
-        return 0x40;
-    case 'h':
-    case 'H':
-    case 'l':
-    case 'L':
-        return 0x28;
-    }
-    return 0x00;
-}
-
-uint8_t ldi_reg_dest_offset(char reg) {
-
-    // LDI base 0x06
-    switch (reg) {
-    case 'b':
-    case 'B':
+    case 'm':
+    case 'M':
         return 0x06;
     case 'a':
     case 'A':
-        return 0x3E;
+        return 0x07;
+        break;
+    }
+}
+
+uint8_t is_bdhm(char reg) {
+    switch (reg) {
+    case 'b':
+    case 'B':
+    case 'd':
+    case 'D':
     case 'h':
     case 'H':
-        return 0x26;
+    case 'm':
+    case 'M':
+        return 1;
+    }
+    return 0;
+}
+
+// Looking at the table of instructions, this partitions a
+// register into two groups. BDHM and CELA. This is used to
+// calculate the offset from the base instruction vertically
+uint8_t bdhm_cela_multiplier(char reg) {
+    switch (reg) {
+    case 'b':
+    case 'B':
+    case 'c':
+    case 'C':
+        return 0x00;
+    case 'd':
+    case 'D':
+    case 'e':
+    case 'E':
+        return 0x10;
+
+    case 'h':
+    case 'H':
     case 'l':
     case 'L':
-        return 0x2E;
+        return 0x20;
+    case 'a':
+    case 'A':
+    case 'm':
+    case 'M':
+        return 0x30;
+    }
+}
+
+uint8_t inc_reg_dest_offset(char reg) {
+
+    switch (reg) {
+    case 'b':
+    case 'B':
+    case 'h':
+    case 'H':
+        return 0x04;
+    case 'a':
+    case 'A':
+    case 'l':
+    case 'L':
+        return 0x0C;
     }
     return 0x00;
 }
@@ -536,22 +576,35 @@ struct assembly *translate(struct ast *ast,
             ASSERT_ARG_COUNT(n, 2, "LD");
 
             struct instruction *inst =
-                lookup_base_mnem("LD");
+                lookup_base_mnem(n->opcode);
 
             // LDI
             if (op2->type == TVALUE) {
-                uint8_t dst =
-                    ldi_reg_dest_offset(op->value[0]);
-                uint8_t opcode = dst;
+                uint8_t opcode = 0;
+
+                if (is_bdhm(op->value[0])) {
+                    opcode += 0x06;
+                } else {
+                    opcode += 0x0E;
+                }
+                opcode +=
+                    bdhm_cela_multiplier(op->value[0]);
                 printf("%4x: ldi(%x) %c %s \n", address,
                        opcode, op->value[0], op2->value);
 
                 WRITE_OPCODE(memory, opcode);
                 WRITE_OPERAND_STR(memory, op->value);
             } else {
+                // Row multiplier for inst grid.
                 uint8_t dst =
-                    ld_reg_dest_offset(op->value[0]);
+                    bdhm_cela_multiplier(op->value[0]);
                 uint8_t src = reg_to_offset(op2->value[0]);
+
+                // Right hand side
+                if (is_cela(op->value[0])) {
+                    src += 0x08;
+                }
+
                 uint8_t opcode = inst->opcode + src + dst;
 
                 printf("%4x: ld%c(%x) %c  \n", address,
@@ -599,6 +652,32 @@ struct assembly *translate(struct ast *ast,
                 WRITE_OPCODE(memory, opcode);
                 WRITE_NOOPERAND(memory);
             }
+        } else if (EQUALS(n->opcode, "INC") ||
+                   EQUALS(n->opcode, "DEC")) {
+
+            // INRA 0x3C INRL 0x2C
+            // INRB 0x04 INRH 0x24
+            // DECA 0x3D DECL 0x2D
+            // DECB 0x05 DECH 0x25
+            if (op->type != TREGISTER) {
+                // TODO: This should be done in the
+                // parser?
+                SYNTAX_ERROR("Invalid operand");
+            }
+
+            uint8_t opcode =
+                inc_reg_dest_offset(op->value[0]);
+
+            if (EQUALS(n->opcode, "DEC")) {
+                opcode += 1;
+            }
+
+            opcode += reg_to_offset(op->value[0]);
+            printf("%4x: %s%c(%x) \n", address, n->opcode,
+                   op->value[0], opcode);
+
+            WRITE_OPCODE(memory, opcode);
+            WRITE_NOOPERAND(memory);
         }
     }
 
@@ -686,7 +765,6 @@ int main(int argc, char *argv[argc + 1]) {
     root = tokenize(buffer);
 
     struct ast *ast = parse_tokens(root);
-
     struct symbol_table *st = build_symbol_table(ast);
 
     printf("\nAST\n");

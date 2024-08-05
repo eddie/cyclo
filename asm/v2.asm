@@ -23,6 +23,9 @@ some_label:
   xor 0xff
   xor h
   or a 
+  dec a 
+  dec b
+  inc l
   or 0x22
   sub h
   jnz [some_label]
