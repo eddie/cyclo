@@ -438,14 +438,12 @@ struct instruction {
 
 // Base instructions
 struct instruction instructions[] = {
-    X(LD, 0x40),   X(ADD, 0x80),
+    X(LD, 0x40),  X(ADD, 0x80), X(OR, 0xB0),  X(AND, 0xA0),
+    X(SUB, 0x90), X(ADC, 0x88), X(SBB, 0x98), X(XOR, 0xA8),
 
-    X(ADDA, 0x87), X(ADDB, 0x80),
-    X(ADDH, 0x84), X(ADDL, 0x85),
+    X(HLT, 0x76), X(ADI, 0xC6),
 
-    X(HLT, 0x76),  X(ADI, 0xC6),
-
-    X(CMP, 0xB8),  X(CPI, 0xFE)};
+    X(CMP, 0xB8), X(CPI, 0xFE)};
 
 static inline struct instruction *
 lookup_base_mnem(char *mnemonic) {
@@ -516,6 +514,16 @@ struct assembly *translate(struct ast *ast,
     uint8_t *memory = build->buffer;
     uint16_t address = 0;
 
+    // Fixed lookup for ADD/ADI, CMP/CPI etc
+    uint8_t immediate_lookup[255];
+    immediate_lookup[0xb8] = 0xfe; // ADD -> ADI
+    immediate_lookup[0x80] = 0xc6; // CMP -> CPI
+    immediate_lookup[0x90] = 0xDE; // SUB -> SBI
+    immediate_lookup[0x88] = 0xCE; // ADC -> ACI
+    immediate_lookup[0xA0] = 0xE6; // AND -> ADI
+    immediate_lookup[0xB0] = 0xF6; // OR  -> ORI
+    immediate_lookup[0xA8] = 0xEE; // XOR -> XRI
+
     for (size_t i = 0; i < ast->total; i++) {
 
         struct ast_node *n = &ast->nodes[i];
@@ -553,57 +561,40 @@ struct assembly *translate(struct ast *ast,
                 WRITE_NOOPERAND(memory);
             }
 
-        } else if (EQUALS(n->opcode, "ADD")) {
+        } else if (EQUALS(n->opcode, "ADD") ||
+                   EQUALS(n->opcode, "ADC") ||
+                   EQUALS(n->opcode, "SUB") ||
+                   EQUALS(n->opcode, "SBB") ||
+                   EQUALS(n->opcode, "CMP") ||
+                   EQUALS(n->opcode, "XOR") ||
+                   EQUALS(n->opcode, "OR") ||
+                   EQUALS(n->opcode, "ANA")) {
 
-            ASSERT_ARG_COUNT(n, 1, "ADD");
+            ASSERT_ARG_COUNT(n, 1, n->opcode);
 
-            // ADD x -> ADI
+            struct instruction *inst =
+                lookup_base_mnem(n->opcode);
+
+            uint8_t i_code = immediate_lookup[inst->opcode];
+
+            // Intermediate value
             if (op->type == TVALUE) {
 
-                struct instruction *inst =
-                    lookup_base_mnem("ADI");
+                uint16_t opcode = i_code;
 
-                uint16_t opcode = inst->opcode;
-
-                printf("%4x: addi(%x) %s\n", address,
-                       opcode, op->value);
+                printf("%4x: %s(%x) %s\n", address,
+                       inst->mnemonic, opcode, op->value);
 
                 WRITE_OPCODE(memory, opcode);
                 WRITE_OPERAND_STR(memory, op->value);
 
             } else {
-                struct instruction *inst =
-                    lookup_base_mnem("ADD");
                 uint8_t dst = reg_to_offset(op->value[0]);
                 uint8_t opcode = inst->opcode + dst;
 
-                printf("%4x: add%c(%x) \n", address,
-                       op->value[0], opcode);
-
-                WRITE_OPCODE(memory, opcode);
-                WRITE_NOOPERAND(memory);
-            }
-        } else if (EQUALS(n->opcode, "CMP")) {
-            // CMP A / CMP 0xff -> CPI
-            if (op->type == TVALUE) {
-                struct instruction *inst =
-                    lookup_base_mnem("CPI");
-
-                uint16_t opcode = inst->opcode;
-                printf("%4x: cpi(%x) %s\n", address, opcode,
-                       op->value);
-
-                WRITE_OPCODE(memory, opcode);
-                WRITE_OPERAND_STR(memory, op->value);
-            } else {
-                struct instruction *inst =
-                    lookup_base_mnem("CMP");
-
-                uint8_t dst = reg_to_offset(op->value[0]);
-                uint8_t opcode = inst->opcode + dst;
-
-                printf("%4x: cmp%c(%x) \n", address,
-                       op->value[0], opcode);
+                printf("%4x: %s%c(%x) \n", address,
+                       inst->mnemonic, op->value[0],
+                       opcode);
 
                 WRITE_OPCODE(memory, opcode);
                 WRITE_NOOPERAND(memory);

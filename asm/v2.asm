@@ -18,7 +18,15 @@ some_label:
   cmp 0xff
   add l
   add 0x22
+  adc 0x99
+  sub 0xff
+  xor 0xff
+  xor h
+  or a 
+  or 0x22
+  sub h
   jnz [some_label]
+
   hlt
 
 
