@@ -402,7 +402,8 @@ struct ast *parse_tokens(struct token *root) {
                     arg->type = TSTR;
 
                 } else if (op->type == TADDR) {
-                    if (isalpha(op->s_val[0])) {
+                    if (isalpha(op->s_val[0]) &&
+                        strlen(op->s_val) == 1) {
                         arg->type = TREGADDRESS;
                     } else {
                         arg->type = TADDRESS;
@@ -581,9 +582,27 @@ size_t calculate_machine_code_len(struct ast *ast,
     return len;
 }
 
+size_t calculate_data_len(struct ast *ast,
+                          struct symbol_table *st) {
+    size_t len = 0;
+    // Build symbol table from ASt
+    for (size_t i = 0; i < ast->total; i++) {
+        struct ast_node *n = &ast->nodes[i];
+
+        if (n->type == AST_INSTRUCTION &&
+            EQUALS(n->opcode, "DB")) {
+
+            len += calculate_symbol_size(n);
+        }
+    }
+    return len;
+}
+
 struct assembly {
     uint8_t *buffer;
-    uint16_t len;
+    uint8_t code_len;
+    uint8_t data_len;
+    uint8_t len;
 };
 
 #define WRITE_OPERAND(memory, operand)                     \
@@ -612,13 +631,20 @@ struct assembly *translate(struct ast *ast,
         xmalloc(sizeof(struct assembly));
 
     // Allocate buffer for assembly
-    build->len = calculate_machine_code_len(ast, st);
+    build->code_len = calculate_machine_code_len(ast, st);
+    build->data_len = calculate_data_len(ast, st);
+    build->len = build->code_len + build->data_len;
+
     build->buffer = xmalloc(build->len);
+    printf("Code Len: %#x Data Len: %#x\n", build->code_len,
+           build->data_len);
 
     memset(build->buffer, 0, build->len);
 
     uint8_t *memory = build->buffer;
     uint16_t address = 0;
+    uint16_t data_base = build->code_len + 1;
+    uint16_t data_address = data_base;
 
     // Fixed lookup for ADD/ADI, CMP/CPI etc
     uint8_t immediate_lookup[255];
@@ -779,26 +805,44 @@ struct assembly *translate(struct ast *ast,
             uint16_t addr = htoi(op2->value);
 
             // If address, jump to it
-            if (op2->type == TADDRESS) {
-                addr = get_symbol_addr(
-                    st, n->operands[1].value);
-            } else {
+            if (op2->type == TVALUE) {
                 addr = htoi(op2->value);
+            } else {
+                addr = data_base +
+                       get_symbol_addr(
+                           st, n->operands[1].value);
             }
 
             WRITE_OPCODE(memory, opcode);
             WRITE_OPERAND(memory, addr);
-            printf("%4x: %s(%x) \n", address, n->opcode,
-                   addr);
+            printf("%4x: %s(%x) %x \n", address, n->opcode,
+                   opcode, addr);
 
         } else if (EQUALS(n->opcode, "DB")) {
             // Store the operands in the data section
             // of memory, this is a naive implementation
+            for (size_t i = 0; i < n->argn; i++) {
+                struct ast_operand *op = &n->operands[i];
+
+                if (op->type == TSTR) {
+                    printf("%4x: %s(%s)  \n", data_address,
+                           n->opcode, op->value);
+                    for (size_t j = 0;
+                         j < strlen(op->value); j++) {
+                        memory[data_address++] =
+                            op->value[j];
+                    }
+                } else {
+                    printf("%4x: %s(%s)  \n", data_address,
+                           n->opcode, op->value);
+                    memory[data_address++] =
+                        htoi(op->value);
+                }
+            }
         }
     }
 
     // TODO:
-    // * JMP/JZ/JNZ/JPO/JPE etc.
     // * CALL
     // * RET
     // * PUSH/POP
@@ -806,10 +850,8 @@ struct assembly *translate(struct ast *ast,
     // * XCHG
     // * XRA
     // * ORA
-    // * INR DCR (A/B/H/L)
     // * STAX
     // * INX
-    // * LXI SP/H
     // * CMP
 
     // Write HLT
