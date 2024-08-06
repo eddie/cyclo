@@ -43,7 +43,14 @@ enum state {
 #define MAX_SYMBOLS 255
 #define MAX_SYMBOL_LEN 255
 
-enum tokens { TINST, TOPERAND, TLABEL, TDIR, TADDR };
+enum tokens {
+    TINST,
+    TOPERAND,
+    TOPERAND_STR,
+    TLABEL,
+    TDIR,
+    TADDR
+};
 
 struct token {
     char s_val[255];
@@ -55,7 +62,14 @@ struct token {
     struct token *prev;
 };
 
-enum op_type { TREGISTER, TVALUE, TADDRESS, TREGADDRESS };
+enum op_type {
+    TREGISTER,
+    TVALUE,
+    TSTR,
+    TADDRESS,
+    TREGADDRESS
+};
+
 struct ast_operand {
     char value[MAX_ARG_LEN];
     int type;
@@ -133,12 +147,33 @@ size_t get_symbol_addr(struct symbol_table *st,
     return st->symbols[index].addr;
 }
 
+int8_t calculate_symbol_size(struct ast_node *n) {
+    if (NEQUALS(n->opcode, "DB")) {
+        return 0;
+    }
+
+    // Calculate length of the operands as str values.
+    // only ASCII for now.
+    int8_t size = 0;
+
+    for (size_t i = 0; i < n->argn; i++) {
+        struct ast_operand *op = &n->operands[i];
+        if (op->type == TSTR) {
+            size += strlen(op->value);
+        } else {
+            size += 1;
+        }
+    }
+    return size;
+}
+
 // Build a line based symbol table
 struct symbol_table *build_symbol_table(struct ast *ast) {
     struct symbol_table *st = init_symbol_table();
 
     size_t line = 0;
     uint16_t addr = 0;
+    uint16_t doffset = 0;
 
     // Build symbol table from ASt
     for (size_t i = 0; i < ast->total; i++) {
@@ -153,7 +188,11 @@ struct symbol_table *build_symbol_table(struct ast *ast) {
             line++;
             addr += 3;
 
-            printf("xxxxx: %s %d\n", n->opcode, addr);
+        } else if (n->type == AST_INSTRUCTION &&
+                   EQUALS(n->opcode, "DB")) {
+
+            doffset += calculate_symbol_size(n);
+            add_symbol(st, n->opcode, line, doffset);
         }
     }
 
@@ -230,6 +269,8 @@ void print_tokens(struct token *root) {
     do {
         if (tmp->type == TINST) {
             printf("Instruction: %s\n", tmp->s_val);
+        } else if (tmp->type == TOPERAND_STR) {
+            printf("String Op: %s\n", tmp->s_val);
         } else if (tmp->type == TOPERAND) {
             printf("Operand: %s\n", tmp->s_val);
         } else if (tmp->type == TDIR) {
@@ -284,21 +325,23 @@ struct token *tokenize(char *buffer) {
                 t_tmp = create_token(t_root, TOPERAND);
             }
 
-        } else if (isalpha(c) || isdigit(c)) {
+        } else if (isalpha(c) || isdigit(c) || c == '"') {
 
             if (state == COMMENT)
                 continue;
 
             if (state == PROGRAM) {
-
                 state = INSTRUCTION;
                 t_tmp = create_token(t_root, TINST);
             }
 
-            // TODO: Only append value on
-            // directive,instruction or operand
-            astrval(t_tmp, c);
+            // String literals
+            if (state == OPERAND && c == '"') {
+                t_tmp->type = TOPERAND_STR;
+                continue;
+            }
 
+            astrval(t_tmp, c);
         } else if (c == ':') {
 
             if (state == INSTRUCTION) {
@@ -306,14 +349,12 @@ struct token *tokenize(char *buffer) {
                 t_tmp->type = TLABEL;
                 state = PROGRAM;
             }
-
         } else if (c == '[') {
 
             if (state == OPERAND) {
                 state = ADDR;
                 t_tmp->type = TADDR;
             }
-
         } else if (c == '\n') {
 
             state = PROGRAM;
@@ -342,6 +383,7 @@ struct ast *parse_tokens(struct token *root) {
             struct token *op = tmp->next;
 
             while (op && (op->type == TOPERAND ||
+                          op->type == TOPERAND_STR ||
                           op->type == TADDR)) {
 
                 struct ast_operand *arg =
@@ -356,6 +398,9 @@ struct ast *parse_tokens(struct token *root) {
                     } else {
                         arg->type = TVALUE;
                     }
+                } else if (op->type == TOPERAND_STR) {
+                    arg->type = TSTR;
+
                 } else if (op->type == TADDR) {
                     if (isalpha(op->s_val[0])) {
                         arg->type = TREGADDRESS;
@@ -501,6 +546,8 @@ struct instruction instructions[] = {
 
     X(JMP, 0xC3), X(JNZ, 0xC2), X(JZ, 0xCA),   X(JP, 0xF2),
     X(JPO, 0xE2), X(JPE, 0xEA), X(CALL, 0xCD),
+
+    X(LXI, 0x01),
 
     X(CMP, 0xB8), X(CPI, 0xFE)};
 
@@ -713,6 +760,40 @@ struct assembly *translate(struct ast *ast,
             WRITE_OPERAND(memory, addr);
             printf("%4x: %s(%x) \n", address, n->opcode,
                    addr);
+        } else if (EQUALS(n->opcode, "LXI")) {
+
+            // B,D,H, SP
+            struct instruction *inst =
+                lookup_base_mnem(n->opcode);
+
+            uint8_t dst =
+                bdhm_cela_multiplier(op->value[0]);
+
+            // Fourth LXI is LXI SP
+            if (op->value[0] == 's' ||
+                op->value[0] == 'S') {
+                dst = 0x30;
+            }
+
+            uint8_t opcode = inst->opcode + dst;
+            uint16_t addr = htoi(op2->value);
+
+            // If address, jump to it
+            if (op2->type == TADDRESS) {
+                addr = get_symbol_addr(
+                    st, n->operands[1].value);
+            } else {
+                addr = htoi(op2->value);
+            }
+
+            WRITE_OPCODE(memory, opcode);
+            WRITE_OPERAND(memory, addr);
+            printf("%4x: %s(%x) \n", address, n->opcode,
+                   addr);
+
+        } else if (EQUALS(n->opcode, "DB")) {
+            // Store the operands in the data section
+            // of memory, this is a naive implementation
         }
     }
 
@@ -760,6 +841,8 @@ void print_ast(struct ast *ast) {
                 type = 'R';
             } else if (n->operands[j].type == TADDR) {
                 type = '*';
+            } else if (n->operands[j].type == TSTR) {
+                type = 'S';
             } else if (n->operands[j].type == TREGADDRESS) {
                 type = 'I';
             } else {
@@ -775,8 +858,9 @@ void print_symbols(struct symbol_table *st) {
 
     for (size_t x = 0; x <= MAX_SYMBOLS; x++) {
         if (strlen(st->symbols[x].name) > 1) {
-            printf("S: %s Line: %zu\n", st->symbols[x].name,
-                   st->symbols[x].line);
+            printf("S: %s Line: %zu %x\n",
+                   st->symbols[x].name, st->symbols[x].line,
+                   st->symbols[x].addr);
         }
     }
 }
@@ -802,6 +886,8 @@ int main(int argc, char *argv[argc + 1]) {
     struct ast *ast = parse_tokens(root);
     struct symbol_table *st = build_symbol_table(ast);
 
+    printf("\nTokens\n");
+    print_tokens(root);
     printf("\nAST\n");
     print_ast(ast);
     printf("\nSymbols\n");

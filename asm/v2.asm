@@ -21,11 +21,15 @@ some_label:
   adc 0x99
   sub 0xff
   xor 0xff
+
+  # Move 0 at dat into A
+  lxi H, [dat]
+  ld a, M
+
   xor h
   or a 
   dec a 
   dec b
-  inc l
   or 0x22
   sub h
   jnz [some_label]
