@@ -1,6 +1,6 @@
 # vim: set noexpandtab tabstop=8 shiftwidth=8:
 CC ?= c99
-CFLAGS = -Wall -Wextra -std=c11 -pedantic -Wshadow
+CFLAGS = -g  -Wall -Wextra -std=c11 -pedantic -Wshadow
 LDFLAGS = -lc 
 
 
@@ -12,7 +12,7 @@ assembler: assembler.c
 compiler: compiler.c util.o file.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-emulator: emulator.c video.o
+emulator: emulator.c video.o file.o util.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 

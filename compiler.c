@@ -1,4 +1,5 @@
 #include "file.h"
+#include "op8080.h"
 #include "util.h"
 #include <ctype.h>
 #include <stdarg.h>
@@ -445,7 +446,6 @@ uint8_t is_cela(char reg) {
 // some src/dest pairs have a fixed pattern. .eg A Last, B
 // first. This can be reused.
 uint8_t reg_to_offset(char reg) {
-    uint8_t base = 0;
 
     switch (reg) {
     case 'b':
@@ -467,6 +467,7 @@ uint8_t reg_to_offset(char reg) {
         return 0x07;
         break;
     }
+    return 0x00;
 }
 
 uint8_t is_bdhm(char reg) {
@@ -511,6 +512,8 @@ uint8_t bdhm_cela_multiplier(char reg) {
     case 'M':
         return 0x30;
     }
+
+    return 0x00;
 }
 
 uint8_t inc_reg_dest_offset(char reg) {
@@ -530,60 +533,18 @@ uint8_t inc_reg_dest_offset(char reg) {
     return 0x00;
 }
 
-struct instruction {
-    char mnemonic[6];
-    uint8_t opcode;
-};
-
-#define X(name, value)                                     \
-    { #name, value }
-
-// Base instructions
-struct instruction instructions[] = {
-    X(LD, 0x40),  X(ADD, 0x80), X(OR, 0xB0),   X(AND, 0xA0),
-    X(SUB, 0x90), X(ADC, 0x88), X(SBB, 0x98),  X(XOR, 0xA8),
-
-    X(HLT, 0x76), X(ADI, 0xC6),
-
-    X(JMP, 0xC3), X(JNZ, 0xC2), X(JZ, 0xCA),   X(JP, 0xF2),
-    X(JPO, 0xE2), X(JPE, 0xEA), X(CALL, 0xCD),
-
-    X(LXI, 0x01),
-
-    X(CMP, 0xB8), X(CPI, 0xFE)};
-
-static inline struct instruction *
-lookup_base_mnem(char *mnemonic) {
-
-    int total =
-        sizeof(instructions) / sizeof(struct instruction);
-
-    for (int i = 0; i < total; i++) {
-        if (strcasecmp(mnemonic,
-                       instructions[i].mnemonic) == 0) {
-            return &instructions[i];
-        }
-    }
-
-    return 0;
-}
-
-size_t calculate_machine_code_len(struct ast *ast,
-                                  struct symbol_table *st) {
+size_t calculate_machine_code_len(struct ast *ast) {
     size_t len = 0;
 
-    // Naive, 3 bytes per line
-    // TODO: Calculate storage size of db values
     len += 3 * ast->total;
 
-    // Add HLT
+    // Compiler added instructions: HLT
     len += 1;
 
     return len;
 }
 
-size_t calculate_data_len(struct ast *ast,
-                          struct symbol_table *st) {
+size_t calculate_data_len(struct ast *ast) {
     size_t len = 0;
     // Build symbol table from ASt
     for (size_t i = 0; i < ast->total; i++) {
@@ -621,9 +582,6 @@ struct assembly {
 #define WRITE_OPCODE(memory, opcode)                       \
     memory[address++] = opcode;
 
-// TODO: JMPs using symbol table lookup.
-// Calculate address using line * (instruction
-// size + operand sizes)
 struct assembly *translate(struct ast *ast,
                            struct symbol_table *st) {
 
@@ -631,8 +589,8 @@ struct assembly *translate(struct ast *ast,
         xmalloc(sizeof(struct assembly));
 
     // Allocate buffer for assembly
-    build->code_len = calculate_machine_code_len(ast, st);
-    build->data_len = calculate_data_len(ast, st);
+    build->code_len = calculate_machine_code_len(ast);
+    build->data_len = calculate_data_len(ast);
     build->len = build->code_len + build->data_len;
 
     build->buffer = xmalloc(build->len);
@@ -685,7 +643,7 @@ struct assembly *translate(struct ast *ast,
                        opcode, op->value[0], op2->value);
 
                 WRITE_OPCODE(memory, opcode);
-                WRITE_OPERAND_STR(memory, op->value);
+                WRITE_OPERAND_STR(memory, op2->value);
             } else {
                 // Row multiplier for inst grid.
                 uint8_t dst =
@@ -822,21 +780,21 @@ struct assembly *translate(struct ast *ast,
             // Store the operands in the data section
             // of memory, this is a naive implementation
             for (size_t i = 0; i < n->argn; i++) {
-                struct ast_operand *op = &n->operands[i];
+                struct ast_operand *dop = &n->operands[i];
 
-                if (op->type == TSTR) {
+                if (dop->type == TSTR) {
                     printf("%4x: %s(%s)  \n", data_address,
-                           n->opcode, op->value);
+                           n->opcode, dop->value);
                     for (size_t j = 0;
-                         j < strlen(op->value); j++) {
+                         j < strlen(dop->value); j++) {
                         memory[data_address++] =
-                            op->value[j];
+                            dop->value[j];
                     }
                 } else {
                     printf("%4x: %s(%s)  \n", data_address,
-                           n->opcode, op->value);
+                           n->opcode, dop->value);
                     memory[data_address++] =
-                        htoi(op->value);
+                        htoi(dop->value);
                 }
             }
         }
@@ -848,11 +806,8 @@ struct assembly *translate(struct ast *ast,
     // * PUSH/POP
     // * IN/OUT
     // * XCHG
-    // * XRA
-    // * ORA
     // * STAX
     // * INX
-    // * CMP
 
     // Write HLT
     struct instruction *inst = lookup_base_mnem("HLT");
@@ -937,6 +892,9 @@ int main(int argc, char *argv[argc + 1]) {
     printf("\nMachine code\n");
 
     struct assembly *build = translate(ast, st);
+
+    write_file(argv[2], build->buffer, build->len);
+
     print_memory(build->buffer, build->len);
 
     free_symbol_table(st);

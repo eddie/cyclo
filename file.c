@@ -1,8 +1,9 @@
 #include "file.h"
 #include "util.h"
+#include <stdlib.h>
 #include <string.h>
 
-void load_file(char *path, char **buffer) {
+long load_file(char *path, char **buffer) {
     if (strlen(path) <= 0) {
         die("load_file: no path to load");
     }
@@ -24,6 +25,18 @@ void load_file(char *path, char **buffer) {
     fread(*buffer, 1, length, file);
 
     fclose(file);
+    return length;
+}
+
+long load_file_uint8(char *path, uint8_t *mem[]) {
+
+    char *buffer;
+    long len = load_file(path, &buffer);
+
+    memcpy(mem, buffer, len);
+
+    free(buffer);
+    return len;
 }
 
 void write_file(char *path, uint8_t *buffer, int length) {

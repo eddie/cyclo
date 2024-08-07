@@ -22,9 +22,11 @@ some_label:
   sub 0xff
   xor 0xff
 
+
+  ld A,0x25
   # Move 0 at dat into A
   lxi H, [dat]
-  ld a, M
+  ld M,A
 
   xor h
   or a 
