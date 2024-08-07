@@ -2,6 +2,8 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <strings.h>
 struct instruction {
     char mnemonic[6];
@@ -20,6 +22,7 @@ struct instruction instructions[] = {
     X(HLT, 0x76),  X(ADI, 0xC6),
 
     X(JMP, 0xC3),  X(JNZ, 0xC2),  X(JZ, 0xCA),
+    X(JNC, 0xD2),  X(JC, 0xDA),   X(JM, 0xFA),
     X(JP, 0xF2),   X(JPO, 0xE2),  X(JPE, 0xEA),
     X(CALL, 0xCD),
 
@@ -33,6 +36,7 @@ struct instruction *lookup_base_mnem(char *mnemonic) {
     int total =
         sizeof(instructions) / sizeof(struct instruction);
 
+    // TODO: Handle no mnemonic found!
     for (int i = 0; i < total; i++) {
         if (strcasecmp(mnemonic,
                        instructions[i].mnemonic) == 0) {
@@ -40,5 +44,5 @@ struct instruction *lookup_base_mnem(char *mnemonic) {
         }
     }
 
-    return 0;
+    return 0x0;
 }

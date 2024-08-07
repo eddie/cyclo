@@ -1,3 +1,6 @@
+init:
+  jmp [clear]
+
   ld a,0x02
   add a
   ld b,0x05
@@ -34,3 +37,17 @@
   sub 0x15
 
   ld a,0x10
+
+
+  ld a,0x50
+  add 0xff
+  add 0x01
+  sub 0xff
+
+# Initialize the display
+clear:  ld a,0x03
+        sta 0xA000
+
+
+ld c,0xff
+ld a,c

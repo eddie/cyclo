@@ -528,7 +528,7 @@ uint8_t inc_reg_dest_offset(char reg) {
 size_t calculate_machine_code_len(struct ast *ast) {
     size_t len = 0;
 
-    len += 3 * ast->total;
+    len += (3 * ast->total);
 
     // Compiler added instructions: HLT
     len += 1;
@@ -583,7 +583,7 @@ struct assembly *translate(struct ast *ast,
     // Allocate buffer for assembly
     build->code_len = calculate_machine_code_len(ast);
     build->data_len = calculate_data_len(ast);
-    build->len = build->code_len + build->data_len;
+    build->len = build->code_len + build->data_len + 1;
 
     build->buffer = xmalloc(build->len);
     printf("Code Len: %#x Data Len: %#x\n", build->code_len,
@@ -644,7 +644,7 @@ struct assembly *translate(struct ast *ast,
 
                 // Right hand side
                 if (is_cela(op->value[0])) {
-                    src += 0x08;
+                    src += 0x09;
                 }
 
                 uint8_t opcode = inst->opcode + src + dst;
@@ -726,6 +726,11 @@ struct assembly *translate(struct ast *ast,
                    EQUALS(n->opcode, "JNZ") ||
                    EQUALS(n->opcode, "JPO") ||
                    EQUALS(n->opcode, "JPE") ||
+                   EQUALS(n->opcode, "JP") ||
+                   EQUALS(n->opcode, "JM") ||
+                   EQUALS(n->opcode, "JZ") ||
+                   EQUALS(n->opcode, "JPC") ||
+                   EQUALS(n->opcode, "JNC") ||
                    EQUALS(n->opcode, "JMP")) {
 
             struct instruction *inst =

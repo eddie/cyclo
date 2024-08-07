@@ -83,6 +83,9 @@ void register_hrange8(
     // From the start address increment the range (H) bits.
     for (uint8_t i = start; i <= endh; i += 0x10) {
         register_handler8(i, mnemonic, handler);
+        if (i + 0x10 < start) {
+            break;
+        }
     }
 }
 void register_hrange16(uint8_t start, uint8_t endh,
@@ -94,6 +97,10 @@ void register_hrange16(uint8_t start, uint8_t endh,
     // From the start address increment the range (H) bits.
     for (uint8_t i = start; i <= endh; i += 0x10) {
         register_handler16(i, mnemonic, handler);
+
+        if (i + 0x10 < start) {
+            break;
+        }
     }
 }
 
@@ -148,13 +155,6 @@ void load_program(struct machine *m, uint8_t *data,
     }
 
     memcpy(&m->memory, data, length);
-}
-
-void print_machine_status(struct machine *m) {
-    printf("    A:%02x BC:%02x%02x DE:%02x%02x HL:%02x%02x"
-           "    PC: %02x SP: %02x C:%u\n\n",
-           m->accumulator, m->b, m->c, m->d, m->e, m->h,
-           m->l, m->pc, m->sp, (m->status >> 1) & 1);
 }
 
 int emu_register_device(struct machine *m,
@@ -250,19 +250,44 @@ uint8_t flag_status(struct machine *m, unsigned int flag) {
     return (m->status >> flag) & 1;
 }
 
+void print_machine_status(struct machine *m) {
+    printf("    A:%02x BC:%02x%02x DE:%02x%02x HL:%02x%02x"
+           "    PC: %02x SP: %02x C:%u Z:%u \n\n",
+           m->accumulator, m->b, m->c, m->d, m->e, m->h,
+           m->l, m->pc, m->sp, flag_status(m, CARRY),
+           flag_status(m, ZERO));
+}
+
 void add_accumulator(struct machine *m, uint8_t val) {
 
-    if ((m->accumulator + val) > 65535) {
+    if ((m->accumulator + val) > 255) {
         update_flag(m, CARRY, 1);
         m->accumulator &= val;
 
     } else {
         m->accumulator += val;
 
-            update_flag(m, CARRY, 0);
+        update_flag(m, CARRY, 0);
         if (m->accumulator == 0) {
             update_flag(m, ZERO, 0);
         }
+    }
+}
+
+void cmp_accumulator(struct machine *m, uint8_t val) {
+    // CMP
+    int8_t it = 0x0;
+    it = (uint8_t)(m->accumulator - val);
+
+    // Zero set if A=REG
+    // Carry set if A < REG
+    // Carry reset if A > REG
+    if (it == 0) {
+        update_flag(m, ZERO, 1);
+    } else if (it < 0) {
+        update_flag(m, CARRY, 1);
+    } else if (it > 0) {
+        update_flag(m, CARRY, 0);
     }
 }
 
@@ -277,6 +302,48 @@ void sub_accumulator(struct machine *m, uint8_t val) {
 
         if (m->accumulator == 0) {
             update_flag(m, ZERO, 0);
+        }
+    }
+}
+
+void op_jp(struct machine *m, uint8_t opcode,
+           uint16_t addr) {
+
+    // Standard jump or jp
+    if (opcode == 0xC3 || opcode == 0xCB) {
+        m->pc = addr;
+    } else if (opcode == 0xF2) {
+        // JP
+        if (flag_status(m, SIGN) == 0) {
+            m->pc = addr;
+        }
+    } else if (opcode == 0xC2) {
+        // JNZ
+        if (flag_status(m, ZERO) != 0) {
+            m->pc = addr;
+        }
+    } else if (opcode == 0xD2) {
+        if (flag_status(m, CARRY) != 0) {
+            m->pc = addr;
+        }
+    } else if (opcode == 0xE2) {
+        // TODO: JPO
+    } else if (opcode == 0xEA) {
+        // TODO: JPE
+    } else if (opcode == 0xCA) {
+        // JZ
+        if (flag_status(m, ZERO) == 0) {
+            m->pc = addr;
+        }
+    } else if (opcode == 0xDA) {
+        // JC
+        if (flag_status(m, CARRY) == 0) {
+            m->pc = addr;
+        }
+    } else if (opcode == 0xFA) {
+        // JM
+        if (flag_status(m, SIGN) == 0) {
+            m->pc = addr;
         }
     }
 }
@@ -402,7 +469,6 @@ uint8_t decode_src_value(struct machine *m, uint8_t oplow) {
 }
 
 void op_ld(struct machine *m, uint8_t opcode, uint16_t op) {
-    uint8_t tmp = 0x00;
     uint16_t hl = (m->h << 8) + m->l;
 
     uint8_t ophigh, oplow;
@@ -411,31 +477,33 @@ void op_ld(struct machine *m, uint8_t opcode, uint16_t op) {
     printf("------------------__>%x %x\n", opnew,
            oplow + ophigh);
 
+    uint8_t tmp = decode_src_value(m, oplow);
+
     // BDHMCELA
     switch (ophigh) {
     case 0x00:
         m->b = tmp;
         break;
-    case 0x01:
+    case 0x10:
         m->d = tmp;
         break;
-    case 0x02:
+    case 0x20:
         m->h = tmp;
         break;
-    case 0x03:
+    case 0x30:
         m->m = tmp;
         write_memory(m, hl, tmp);
         break;
-    case 0x04:
+    case 0x40:
         m->c = tmp;
         break;
-    case 0x05:
+    case 0x50:
         m->e = tmp;
         break;
-    case 0x06:
+    case 0x60:
         m->l = tmp;
         break;
-    case 0x07:
+    case 0x70:
         m->accumulator = tmp;
         break;
     }
@@ -483,14 +551,7 @@ void op_alu_imm(struct machine *m, uint8_t opcode,
         break;
         // CPI
     case 0x70: {
-        // TODO: Refactor`
-        uint8_t it = 0x0;
-        it = (uint8_t)(m->accumulator - op2);
-        if (it == 0) {
-            m->status |= 1;
-        } else {
-            m->status &= 0;
-        }
+        cmp_accumulator(m, op2);
         break;
     }
     }
@@ -536,19 +597,13 @@ void op_alu_reg(struct machine *m, uint8_t opcode,
         m->accumulator ^= tmp;
         break;
     case 0x70: {
-        // TODO: CHECK IMPLEM!
-        uint8_t it = 0x0;
-        it = (uint8_t)(m->accumulator - tmp);
-        if (it == 0) {
-            m->status |= 1;
-        } else {
-            m->status &= 0;
-        }
+        cmp_accumulator(m, tmp);
         break;
     }
     }
 
-    // TODO: Handle status register
+    update_flag(m, SIGN, (m->accumulator >> 7) & 0x01);
+    update_flag(m, ZERO, (m->accumulator >> 7) == 0);
 }
 
 void op_alu_inc_dec(struct machine *m, uint8_t opcode,
@@ -914,6 +969,10 @@ int main(int argc, char **argv) {
 
     register_hrange16(0x01, 0x31, "LXI", op_lxi);
     register_hrange16(0x02, 0x32, "STAX", op_stax);
+
+    register_hrange16(0xC2, 0xF2, "JP", op_jp);
+    register_hrange16(0xCA, 0xFA, "JP", op_jp);
+    register_handler16(0xC3, "JMP", op_jp);
 
     // Remaining to implement
     // STAX (Store accumulator)
