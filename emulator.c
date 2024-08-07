@@ -34,6 +34,7 @@ void register_handler16(uint8_t opcode, char *mnemonic,
                                         uint16_t operand))
 
 {
+    printf("Registering %s %02X\n", mnemonic, opcode);
     handlers[opcode].opcode = opcode;
     handlers[opcode].handle16 = handler;
     strcpy(handlers[opcode].mnemonic, mnemonic);
@@ -45,6 +46,7 @@ void register_handler8(uint8_t opcode, char *mnemonic,
                                        uint8_t op2))
 
 {
+    printf("Registering %s %02X\n", mnemonic, opcode);
     handlers[opcode].opcode = opcode;
     handlers[opcode].handle8 = handler;
     strcpy(handlers[opcode].mnemonic, mnemonic);
@@ -59,6 +61,18 @@ void register_range16(uint8_t start, uint8_t end,
 
     for (size_t i = start; i <= end; i++) {
         register_handler16(i, mnemonic, handler);
+    }
+}
+
+void register_hrange8(
+    uint8_t start, uint8_t endh, char *mnemonic,
+    void (*handler)(struct machine *m, uint8_t opcode,
+
+                    uint8_t op1, uint8_t op2)) {
+
+    // From the start address increment the range (H) bits.
+    for (uint8_t i = start; i <= endh; i += 0x10) {
+        register_handler8(i, mnemonic, handler);
     }
 }
 
@@ -164,8 +178,44 @@ void op_ldi(struct machine *m, uint8_t opcode, uint8_t op1,
 
     OPCODE("LDI");
 
-    // for now just MVI L
-    m->l = op1;
+    uint8_t low = opcode & 0x0F;
+
+    // Stack MVI C/E/L/A ontop of B/D/H/M
+    if (low == 0x0E) {
+        opcode -= 0x08;
+        opcode += 0x40;
+    }
+
+    // Shift B/D/H/M/C/E/L/A left on the 8080 chart
+    opcode -= 0x06;
+
+    // Now we have BDHMCELA as 0x10 0x20 and so on.
+    switch (opcode) {
+    case 0x0:
+        m->b = op1;
+        break;
+    case 0x10:
+        m->d = op1;
+        break;
+    case 0x20:
+        m->h = op1;
+        break;
+    case 0x30:
+        m->m = op1;
+        break;
+    case 0x40:
+        m->c = op1;
+        break;
+    case 0x50:
+        m->e = op1;
+        break;
+    case 0x60:
+        m->l = op1;
+        break;
+    case 0x70:
+        m->accumulator = op1;
+        break;
+    }
 }
 
 void op_ld(struct machine *m, uint8_t opcode, uint16_t op) {
@@ -545,7 +595,8 @@ int main(int argc, char **argv) {
 
     register_range16(0x40, 0x7F, "MOV", op_ld);
     register_handler16(0x76, "HLT", op_hlt);
-    register_handler8(0x2E, "MVILH", op_ldi);
+    register_hrange8(0x06, 0x36, "MVILH", op_ldi);
+    register_hrange8(0x0E, 0x3E, "MVILH", op_ldi);
 
     printf("Loading program %s\n", argv[1]);
     long n =
