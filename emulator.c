@@ -391,6 +391,51 @@ void op_alu_reg(struct machine *m, uint8_t opcode,
     // TODO: Handle status register
 }
 
+void op_alu_inc_dec(struct machine *m, uint8_t opcode,
+                    uint8_t op1, uint8_t op2) {
+
+    uint8_t high, low;
+    int8_t dir = 0;
+
+    // INR
+    if ((opcode & 0x0F) == 0x04 ||
+        (opcode & 0x0F) == 0x0C) {
+
+        decompose_opcode(opcode, 0x04, 0x40, 0x08, &high,
+                         &low);
+        dir = 1;
+        // DCR
+    } else if ((opcode & 0x0F) == 0x05 ||
+               (opcode & 0x0F) == 0x0D) {
+        decompose_opcode(opcode, 0x05, 0x40, 0x08, &high,
+                         &low);
+        dir = -1;
+    }
+
+    switch (high) {
+    case 0x00:
+        m->b += dir;
+        break;
+    case 0x10:
+        m->d += dir;
+        break;
+    case 0x20:
+        m->h += dir;
+    case 0x30:
+        m->m += dir;
+    case 0x40:
+        m->c += dir;
+        break;
+    case 0x50:
+        m->e += dir;
+        break;
+    case 0x60:
+        m->l += dir;
+    case 0x70:
+        m->accumulator += dir;
+    }
+}
+
 void step(struct machine *m) {
 
     // 3 Cycle Fetch
@@ -693,6 +738,11 @@ int main(int argc, char **argv) {
 
     register_range8(0xB0, 0xB7, "ORA", op_alu_reg);
     register_range8(0xB8, 0xBF, "CMP", op_alu_reg);
+
+    register_hrange8(0x04, 0x34, "INR", op_alu_inc_dec);
+    register_hrange8(0x0C, 0x3C, "INR", op_alu_inc_dec);
+    register_hrange8(0x05, 0x35, "DCR", op_alu_inc_dec);
+    register_hrange8(0x0D, 0x3D, "INR", op_alu_inc_dec);
 
     printf("Loading program %s\n", argv[1]);
     long n =

@@ -717,12 +717,14 @@ struct assembly *translate(struct ast *ast,
 
             uint8_t opcode =
                 inc_reg_dest_offset(op->value[0]);
+            uint8_t mult =
+                bdhm_cela_multiplier(op->value[0]);
 
             if (EQUALS(n->opcode, "DEC")) {
-                opcode += 1;
+                opcode += 0x1;
             }
 
-            opcode += reg_to_offset(op->value[0]);
+            opcode += mult;
             printf("%4x: %s%c(%x) \n", address, n->opcode,
                    op->value[0], opcode);
 
