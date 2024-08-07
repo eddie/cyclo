@@ -338,6 +338,61 @@ void op_ld(struct machine *m, uint8_t opcode, uint16_t op) {
     }
 }
 
+// TODO: Update status registers!
+void op_alu_imm(struct machine *m, uint8_t opcode,
+                uint8_t op1, uint8_t op2) {
+    uint8_t high, low;
+    decompose_opcode(opcode, 0xC6, 0x40, 0x08, &high, &low);
+
+    // High contains the operation.
+    switch (high) {
+
+        // ADI
+    case 0x00:
+        m->accumulator += op2;
+        break;
+        // SUI
+    case 0x10:
+        m->accumulator -= op2;
+        break;
+        // ANI
+    case 0x20:
+        m->accumulator &= op2;
+        break;
+        // ORI
+    case 0x30:
+        m->accumulator |= op2;
+        break;
+
+        // ACI
+    case 0x40:
+        m->accumulator += op2 + ((m->status >> 1) & 1);
+        break;
+
+        // SBI
+    case 0x50:
+        // TODO: check!
+        m->accumulator -= op2 + ((m->status >> 1) & 1);
+        break;
+        // XRI
+    case 0x60:
+        m->accumulator ^= op2;
+        break;
+        // CPI
+    case 0x70: {
+        // TODO: Refactor`
+        uint8_t it = 0x0;
+        it = (uint8_t)(m->accumulator - op2);
+        if (it == 0) {
+            m->status |= 1;
+        } else {
+            m->status &= 0;
+        }
+        break;
+    }
+    }
+}
+
 void op_alu_reg(struct machine *m, uint8_t opcode,
                 uint8_t op1, uint8_t op2) {
 
@@ -743,6 +798,16 @@ int main(int argc, char **argv) {
     register_hrange8(0x0C, 0x3C, "INR", op_alu_inc_dec);
     register_hrange8(0x05, 0x35, "DCR", op_alu_inc_dec);
     register_hrange8(0x0D, 0x3D, "INR", op_alu_inc_dec);
+
+    register_handler8(0xCE, "ACI", op_alu_imm);
+    register_handler8(0xDE, "SBI", op_alu_imm);
+    register_handler8(0xEE, "XRI", op_alu_imm);
+    register_handler8(0xFE, "CPI", op_alu_imm);
+
+    register_handler8(0xC6, "ADI", op_alu_imm);
+    register_handler8(0xD6, "SUI", op_alu_imm);
+    register_handler8(0xE6, "ANI", op_alu_imm);
+    register_handler8(0xF6, "ORI", op_alu_imm);
 
     printf("Loading program %s\n", argv[1]);
     long n =
