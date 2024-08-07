@@ -151,10 +151,10 @@ void load_program(struct machine *m, uint8_t *data,
 }
 
 void print_machine_status(struct machine *m) {
-    printf("A:%02x B:%02x HL:%02x%02x PC: %#02x SP: %#02x "
-           "C: %u\n\n",
-           m->accumulator, m->b, m->h, m->l, m->pc, m->sp,
-           (m->status >> 1) & 1);
+    printf("    A:%02x BC:%02x%02x DE:%02x%02x HL:%02x%02x"
+           "    PC: %02x SP: %02x C:%u\n\n",
+           m->accumulator, m->b, m->c, m->d, m->e, m->h,
+           m->l, m->pc, m->sp, (m->status >> 1) & 1);
 }
 
 int emu_register_device(struct machine *m,
@@ -208,6 +208,10 @@ uint8_t decompose_opcode(uint8_t opcode,
         low = low - group_distance;
         high = high + group_offset;
     }
+    // after further study of the instruction set, the last
+    // byte encodes the src register
+    // the destination is encoded in the upmost byte,
+    // excluding the first 2 bits.
 
     *h = high;
     *l = low;
@@ -224,6 +228,57 @@ void init(struct machine *m) {
     m->status = 0;
     m->pc = 0x0;
     m->halted = 0;
+}
+
+enum FLAG_BIT {
+    CARRY = 0,
+    UNSUED1 = 1,
+    PARITY = 2,
+    UNUSED2 = 3,
+    AUX_CARRY = 4,
+    UNUSED3 = 5,
+    ZERO = 6,
+    SIGN = 7,
+};
+
+void update_flag(struct machine *m, unsigned int flag,
+                 unsigned int val) {
+    m->status = m->status |= (val << flag);
+}
+
+uint8_t flag_status(struct machine *m, unsigned int flag) {
+    return (m->status >> flag) & 1;
+}
+
+void add_accumulator(struct machine *m, uint8_t val) {
+
+    if ((m->accumulator + val) > 65535) {
+        update_flag(m, CARRY, 1);
+        m->accumulator &= val;
+
+    } else {
+        m->accumulator += val;
+
+            update_flag(m, CARRY, 0);
+        if (m->accumulator == 0) {
+            update_flag(m, ZERO, 0);
+        }
+    }
+}
+
+void sub_accumulator(struct machine *m, uint8_t val) {
+
+    if ((m->accumulator - val) < 0) {
+        update_flag(m, CARRY, 1);
+        m->accumulator &= val;
+    } else {
+        m->accumulator -= val;
+        update_flag(m, CARRY, 0);
+
+        if (m->accumulator == 0) {
+            update_flag(m, ZERO, 0);
+        }
+    }
 }
 
 void op_stax(struct machine *m, uint8_t opcode,
@@ -289,28 +344,28 @@ void op_ldi(struct machine *m, uint8_t opcode, uint8_t op1,
     // Now we have BDHMCELA as 0x10 0x20 and so on.
     switch (opcode) {
     case 0x0:
-        m->b = op1;
+        m->b = op2;
         break;
     case 0x10:
-        m->d = op1;
+        m->d = op2;
         break;
     case 0x20:
-        m->h = op1;
+        m->h = op2;
         break;
     case 0x30:
-        m->m = op1;
+        m->m = op2;
         break;
     case 0x40:
-        m->c = op1;
+        m->c = op2;
         break;
     case 0x50:
-        m->e = op1;
+        m->e = op2;
         break;
     case 0x60:
-        m->l = op1;
+        m->l = op2;
         break;
     case 0x70:
-        m->accumulator = op1;
+        m->accumulator = op2;
         break;
     }
 }
@@ -397,7 +452,7 @@ void op_alu_imm(struct machine *m, uint8_t opcode,
 
         // ADI
     case 0x00:
-        m->accumulator += op2;
+        add_accumulator(m, op2);
         break;
         // SUI
     case 0x10:
@@ -456,10 +511,10 @@ void op_alu_reg(struct machine *m, uint8_t opcode,
     // Update status bits
     switch (high) {
     case 0x00:
-        m->accumulator += tmp;
+        add_accumulator(m, tmp);
         break;
     case 0x10:
-        m->accumulator -= tmp;
+        sub_accumulator(m, tmp);
         break;
     case 0x20:
         m->accumulator &= tmp;
@@ -467,13 +522,16 @@ void op_alu_reg(struct machine *m, uint8_t opcode,
     case 0x30:
         m->accumulator |= tmp;
         break;
-    case 0x40:
-        // TODO: Clear status flag
-        m->accumulator += tmp + ((m->status >> 1) & 1);
+    case 0x40: {
+        uint8_t carry = flag_status(m, CARRY);
+        add_accumulator(m, tmp + carry);
         break;
-    case 0x50:
-        // SBB
+    }
+    case 0x50: {
+        uint8_t carry = flag_status(m, CARRY);
+        sub_accumulator(m, tmp);
         break;
+    }
     case 0x60:
         m->accumulator ^= tmp;
         break;
@@ -547,7 +605,7 @@ void step(struct machine *m) {
     operand = operand + oplow;
 
 #if DEBUG
-    printf("[%02X]: op: %02X %04X \t", m->pc, opcode,
+    printf("%04X: op: %02X %04X \t", m->pc, opcode,
            operand);
 #endif
 
@@ -557,7 +615,7 @@ void step(struct machine *m) {
     if (oh) {
         OPCODE(oh->mnemonic)
         if (oh->handle8) {
-            oh->handle8(m, oh->opcode, oplow, ophigh);
+            oh->handle8(m, oh->opcode, ophigh, oplow);
         } else if (oh->handle16) {
             oh->handle16(m, oh->opcode, operand);
         }
@@ -867,8 +925,12 @@ int main(int argc, char **argv) {
     // XCHG Exchange HL with DE
     // DB better handling
     // Jump instructions
+    //
+    // PUSH PSW POP PSW
     // PUSH / POP
+    // CMC / STC flag manpulation
     // Update all status bits and flags where appropriate
+    // Cleanup logging and debug levels
 
     printf("Loading program %s\n", argv[1]);
     long n =

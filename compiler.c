@@ -506,10 +506,10 @@ uint8_t bdhm_cela_multiplier(char reg) {
     case 'l':
     case 'L':
         return 0x20;
-    case 'a':
-    case 'A':
     case 'm':
     case 'M':
+    case 'a':
+    case 'A':
         return 0x30;
     }
 
@@ -518,19 +518,11 @@ uint8_t bdhm_cela_multiplier(char reg) {
 
 uint8_t inc_reg_dest_offset(char reg) {
 
-    switch (reg) {
-    case 'b':
-    case 'B':
-    case 'h':
-    case 'H':
+    if (is_bdhm(reg)) {
         return 0x04;
-    case 'a':
-    case 'A':
-    case 'l':
-    case 'L':
+    } else {
         return 0x0C;
     }
-    return 0x00;
 }
 
 size_t calculate_machine_code_len(struct ast *ast) {
@@ -783,13 +775,26 @@ struct assembly *translate(struct ast *ast,
                 lookup_base_mnem(n->opcode);
 
             if (op->type == TREGISTER) {
-                // STAX B/D
+
+                uint8_t dst =
+                    bdhm_cela_multiplier(op->value[0]);
+
+                uint8_t opcode = inst->opcode + dst;
+
+                printf("%4x: %s(%x) %c \n", address,
+                       n->opcode, opcode, op->value[0]);
+
+                WRITE_OPCODE(memory, opcode);
+                WRITE_NOOPERAND(memory);
 
             } else {
                 // STA d16
-
                 uint16_t addr = htoi(op->value);
-                // TOOD: Handle label
+
+                if (op->type == LABEL) {
+                    addr = get_symbol_addr(st, op->value);
+                }
+
                 WRITE_OPCODE(memory, inst->opcode);
                 WRITE_OPERAND(memory, addr);
 

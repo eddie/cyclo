@@ -17,5 +17,20 @@
   lxi H,0xff
   # Self modifying!
   sta 0x00
-  stax B
 
+  # Store 0x99 in 0000 and 0001
+  ld a,0x99
+  ld b,0x00
+  ld c,0x00
+  stax b
+  ld d,0x00
+  ld e,0x01
+  stax d
+
+  ld d,0x40
+  inc d
+
+  ld a,0x10
+  sub 0x15
+
+  ld a,0x10
