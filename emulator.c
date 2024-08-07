@@ -63,6 +63,16 @@ void register_range16(uint8_t start, uint8_t end,
         register_handler16(i, mnemonic, handler);
     }
 }
+void register_range8(
+    uint8_t start, uint8_t end, char *mnemonic,
+    void (*handler)(struct machine *m, uint8_t opcode,
+
+                    uint8_t op1, uint8_t op2)) {
+
+    for (size_t i = start; i <= end; i++) {
+        register_handler8(i, mnemonic, handler);
+    }
+}
 
 void register_hrange8(
     uint8_t start, uint8_t endh, char *mnemonic,
@@ -131,8 +141,9 @@ void load_program(struct machine *m, uint8_t *data,
 }
 
 void print_machine_status(struct machine *m) {
-    printf("\rA:%02x B:%02x HL:%02x%02x Carry: %u\n",
-           m->accumulator, m->b, m->h, m->l,
+    printf("A:%02x B:%02x HL:%02x%02x PC: %#02x SP: %#02x "
+           "C: %u\n\n",
+           m->accumulator, m->b, m->h, m->l, m->pc, m->sp,
            (m->status >> 1) & 1);
 }
 
@@ -155,6 +166,46 @@ int emu_register_device(struct machine *m,
     return 0;
 }
 
+// Taking a grid of instructions, we can see it splits into
+// quadrants. The first two quadrants are contained within
+// 0x00 and 0x7F.
+//
+// The first quadrant is for BDHM and the second quadrant
+// for CELA
+//
+// For a given opcode we typically want to convert part of
+// it to a register. Which involess subtracting from an
+// offset (the first instruction of the group) and taking
+// the top 4 bits.
+//
+// We then want to typically align register bits so that
+// they are congurent, e.g B,D,H,M,C,E,L,A 0x00-> 0x07
+//
+// We do this by adding the group size to the register high
+// bits, and subtracting the offset from the low bits.
+// Graphically this would look like translating the group
+// and laying it below the initial group
+uint8_t decompose_opcode(uint8_t opcode,
+                         uint8_t group_start,
+                         uint8_t group_offset,
+                         uint8_t group_distance, uint8_t *h,
+                         uint8_t *l) {
+
+    opcode = opcode - group_start;
+
+    uint8_t low = opcode & 0x0F;
+    uint8_t high = opcode & 0xF0;
+
+    if (low > 0x07) {
+        low = low - group_distance;
+        high = high + group_offset;
+    }
+
+    *h = high;
+    *l = low;
+    return high + low;
+}
+
 // TODO: Update flags on Cyclo
 // TODO: Implement Sub with carry
 // TODO: Allow simulated clock speed
@@ -169,14 +220,11 @@ void init(struct machine *m) {
 
 void op_hlt(struct machine *m, uint8_t opcode,
             uint16_t op) {
-    OPCODE("HLT");
     m->halted = 1;
 }
 
 void op_ldi(struct machine *m, uint8_t opcode, uint8_t op1,
             uint8_t op2) {
-
-    OPCODE("LDI");
 
     uint8_t low = opcode & 0x0F;
 
@@ -218,59 +266,47 @@ void op_ldi(struct machine *m, uint8_t opcode, uint8_t op1,
     }
 }
 
-void op_ld(struct machine *m, uint8_t opcode, uint16_t op) {
-    OPCODE("LD");
-
-    uint8_t base = opcode - 0x40;
-    uint8_t oplow = base & 0x0F;
-    uint8_t ophigh = base & 0xF0;
-    uint8_t tmp = 0x00;
-
-    printf("xxxxxxxxxxxxxxX: %#x (%x,%x)-> %#2x\n", opcode,
-           ophigh, oplow, oplow + ophigh);
-
-    // Shift src arg when it's on the RHS of the instruction
-    // grid. Essentially overlaying this grid.
-    if (oplow > 0x07) {
-        // now oplow = 0-7 (B, C, D, E, H, L, M, A)
-        oplow = oplow - 0x08;
-
-        // Now normalize the dest address to stack CELA
-        // ontop of BDHM
-        // now ophigh = 0-7 (B, D, H, M, C, E, L, A)
-        ophigh = ophigh + 0x40;
-    }
-
+// Once we have normalized an opcode src register into 0x0
+// -> 0x07 we use the following routine to fetch a value
+// from the machine
+uint8_t decode_src_value(struct machine *m, uint8_t oplow) {
     // BCDEHLAM
     switch (oplow) {
     case 0x00:
-        tmp = m->b;
-        break;
+        return m->b;
     case 0x01:
-        tmp = m->c;
-        break;
-
+        return m->c;
     case 0x02:
-        tmp = m->d;
+        return m->d;
         break;
-
     case 0x03:
-        tmp = m->e;
+        return m->e;
         break;
-
     case 0x04:
-        tmp = m->h;
+        return m->h;
         break;
     case 0x05:
-        tmp = m->l;
+        return m->l;
         break;
-    case 0x06:
-        // TODO: tmp = read_memory(m, HL);
-        break;
-    case 0x07:
-        tmp = m->accumulator;
-        break;
+    case 0x06: {
+        uint16_t hl = (m->h << 8) + m->l;
+        return read_memory(m, hl);
     }
+    case 0x07:
+        return m->accumulator;
+    }
+}
+
+void op_ld(struct machine *m, uint8_t opcode, uint16_t op) {
+
+    uint8_t tmp = 0x00;
+    uint16_t hl = (m->h << 8) + m->l;
+
+    uint8_t ophigh, oplow;
+    uint8_t opnew = decompose_opcode(opcode, 0x40, 0x40,
+                                     0x08, &ophigh, &oplow);
+    printf("------------------__>%x %x\n", opnew,
+           oplow + ophigh);
 
     // BDHMCELA
     switch (ophigh) {
@@ -285,7 +321,7 @@ void op_ld(struct machine *m, uint8_t opcode, uint16_t op) {
         break;
     case 0x03:
         m->m = tmp;
-        // TODO: write_memory at HL
+        write_memory(m, hl, tmp);
         break;
     case 0x04:
         m->c = tmp;
@@ -300,9 +336,59 @@ void op_ld(struct machine *m, uint8_t opcode, uint16_t op) {
         m->accumulator = tmp;
         break;
     }
+}
 
-    printf("oooooooooooo: %#x (%x,%x)-> %#2x\n", opcode,
-           ophigh, oplow, oplow + ophigh);
+void op_alu_reg(struct machine *m, uint8_t opcode,
+                uint8_t op1, uint8_t op2) {
+
+    uint16_t hl = (m->h << 8) + m->l;
+    uint8_t high, low;
+
+    decompose_opcode(opcode, 0x80, 0x40, 0x08, &high, &low);
+
+    // Fetch src register value from machine
+    uint8_t tmp = decode_src_value(m, low);
+
+    printf("ALU: %02X %02X %02X\n", low, high, tmp);
+
+    // Update status bits
+    switch (high) {
+    case 0x00:
+        m->accumulator += tmp;
+        break;
+    case 0x10:
+        m->accumulator -= tmp;
+        break;
+    case 0x20:
+        m->accumulator &= tmp;
+        break;
+    case 0x30:
+        m->accumulator |= tmp;
+        break;
+    case 0x40:
+        // TODO: Clear status flag
+        m->accumulator += tmp + ((m->status >> 1) & 1);
+        break;
+    case 0x50:
+        // SBB
+        break;
+    case 0x60:
+        m->accumulator ^= tmp;
+        break;
+    case 0x70: {
+        // TODO: CHECK IMPLEM!
+        uint8_t it = 0x0;
+        it = (uint8_t)(m->accumulator - tmp);
+        if (it == 0) {
+            m->status |= 1;
+        } else {
+            m->status &= 0;
+        }
+        break;
+    }
+    }
+
+    // TODO: Handle status register
 }
 
 void step(struct machine *m) {
@@ -316,8 +402,6 @@ void step(struct machine *m) {
     operand = operand + oplow;
 
 #if DEBUG
-    printf("OP HIGH: %02X OP LOW: %02X OPERAND: %04X\n",
-           ophigh, oplow, operand);
     printf("[%02X]: op: %02X %04X \t", m->pc, opcode,
            operand);
 #endif
@@ -597,6 +681,18 @@ int main(int argc, char **argv) {
     register_handler16(0x76, "HLT", op_hlt);
     register_hrange8(0x06, 0x36, "MVILH", op_ldi);
     register_hrange8(0x0E, 0x3E, "MVILH", op_ldi);
+
+    register_range8(0x80, 0x87, "ADD", op_alu_reg);
+    register_range8(0x88, 0x8F, "ADDC", op_alu_reg);
+
+    register_range8(0x90, 0x97, "SUB", op_alu_reg);
+    register_range8(0x98, 0x9F, "SBB", op_alu_reg);
+
+    register_range8(0xA0, 0xA7, "ANA", op_alu_reg);
+    register_range8(0xA8, 0xAF, "XRA", op_alu_reg);
+
+    register_range8(0xB0, 0xB7, "ORA", op_alu_reg);
+    register_range8(0xB8, 0xBF, "CMP", op_alu_reg);
 
     printf("Loading program %s\n", argv[1]);
     long n =
