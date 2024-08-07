@@ -777,6 +777,25 @@ struct assembly *translate(struct ast *ast,
             WRITE_OPERAND(memory, addr);
             printf("%4x: %s(%x) %x \n", address, n->opcode,
                    opcode, addr);
+        } else if (EQUALS(n->opcode, "STAX") ||
+                   EQUALS(n->opcode, "STA")) {
+            struct instruction *inst =
+                lookup_base_mnem(n->opcode);
+
+            if (op->type == TREGISTER) {
+                // STAX B/D
+
+            } else {
+                // STA d16
+
+                uint16_t addr = htoi(op->value);
+                // TOOD: Handle label
+                WRITE_OPCODE(memory, inst->opcode);
+                WRITE_OPERAND(memory, addr);
+
+                printf("%4x: %s(%x)  %#4x \n", address,
+                       n->opcode, inst->opcode, addr);
+            }
 
         } else if (EQUALS(n->opcode, "DB")) {
             // Store the operands in the data section

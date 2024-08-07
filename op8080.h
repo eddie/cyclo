@@ -13,17 +13,20 @@ struct instruction {
 
 // Base instructions
 struct instruction instructions[] = {
-    X(LD, 0x40),  X(ADD, 0x80), X(OR, 0xB0),   X(AND, 0xA0),
-    X(SUB, 0x90), X(ADC, 0x88), X(SBB, 0x98),  X(XOR, 0xA8),
+    X(LD, 0x40),   X(ADD, 0x80),  X(OR, 0xB0),
+    X(AND, 0xA0),  X(SUB, 0x90),  X(ADC, 0x88),
+    X(SBB, 0x98),  X(XOR, 0xA8),
 
-    X(HLT, 0x76), X(ADI, 0xC6),
+    X(HLT, 0x76),  X(ADI, 0xC6),
 
-    X(JMP, 0xC3), X(JNZ, 0xC2), X(JZ, 0xCA),   X(JP, 0xF2),
-    X(JPO, 0xE2), X(JPE, 0xEA), X(CALL, 0xCD),
+    X(JMP, 0xC3),  X(JNZ, 0xC2),  X(JZ, 0xCA),
+    X(JP, 0xF2),   X(JPO, 0xE2),  X(JPE, 0xEA),
+    X(CALL, 0xCD),
 
-    X(LXI, 0x01),
+    X(LXI, 0x01),  X(STAX, 0x02), X(STA, 0x32),
+    X(LDA, 0x3A),  X(LHLD, 0x2A),
 
-    X(CMP, 0xB8), X(CPI, 0xFE)};
+    X(CMP, 0xB8),  X(CPI, 0xFE)};
 
 struct instruction *lookup_base_mnem(char *mnemonic) {
 

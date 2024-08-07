@@ -85,6 +85,17 @@ void register_hrange8(
         register_handler8(i, mnemonic, handler);
     }
 }
+void register_hrange16(uint8_t start, uint8_t endh,
+                       char *mnemonic,
+                       void (*handler)(struct machine *m,
+                                       uint8_t opcode,
+
+                                       uint16_t op)) {
+    // From the start address increment the range (H) bits.
+    for (uint8_t i = start; i <= endh; i += 0x10) {
+        register_handler16(i, mnemonic, handler);
+    }
+}
 
 struct device *device_from_address(struct machine *m,
                                    uint16_t address) {
@@ -121,7 +132,6 @@ void write_memory(struct machine *m, uint16_t address,
 }
 
 uint8_t read_memory(struct machine *m, uint16_t address) {
-
     struct device *d = device_from_address(m, address);
 
     if (d) {
@@ -149,7 +159,6 @@ void print_machine_status(struct machine *m) {
 
 int emu_register_device(struct machine *m,
                         struct device *dev) {
-
     int index = m->device_count++;
     printf("Registering device %d\n", index);
     if (index > MAX_DEVICE) {
@@ -190,7 +199,6 @@ uint8_t decompose_opcode(uint8_t opcode,
                          uint8_t group_offset,
                          uint8_t group_distance, uint8_t *h,
                          uint8_t *l) {
-
     opcode = opcode - group_start;
 
     uint8_t low = opcode & 0x0F;
@@ -218,14 +226,55 @@ void init(struct machine *m) {
     m->halted = 0;
 }
 
+void op_stax(struct machine *m, uint8_t opcode,
+             uint16_t op) {
+
+    uint8_t high = opcode & 0xF0;
+
+    switch (high) {
+    case 0x00:
+        write_memory(m, (m->b << 8) + m->c, m->accumulator);
+        break;
+    case 0x10:
+        write_memory(m, (m->d << 8) + m->e, m->accumulator);
+        break;
+    // STA a16
+    case 0x30:
+        write_memory(m, op, m->accumulator);
+        break;
+    }
+}
+
 void op_hlt(struct machine *m, uint8_t opcode,
             uint16_t op) {
     m->halted = 1;
 }
 
+void op_lxi(struct machine *m, uint8_t opcode,
+            uint16_t op) {
+
+    uint8_t high = opcode & 0xF0;
+    switch (high) {
+    case 0x00:
+        m->b = (op >> 8) & 0xFF;
+        m->c = op & 0xFF;
+        break;
+    case 0x10:
+        m->d = (op >> 8) & 0xFF;
+        m->e = op & 0xFF;
+        break;
+    case 0x20:
+        m->h = (op >> 8) & 0xFF;
+        m->l = op & 0xFF;
+        break;
+    case 0x30:
+        m->sp = op;
+        break;
+    }
+}
+
 void op_ldi(struct machine *m, uint8_t opcode, uint8_t op1,
             uint8_t op2) {
-
     uint8_t low = opcode & 0x0F;
 
     // Stack MVI C/E/L/A ontop of B/D/H/M
@@ -298,7 +347,6 @@ uint8_t decode_src_value(struct machine *m, uint8_t oplow) {
 }
 
 void op_ld(struct machine *m, uint8_t opcode, uint16_t op) {
-
     uint8_t tmp = 0x00;
     uint16_t hl = (m->h << 8) + m->l;
 
@@ -395,7 +443,6 @@ void op_alu_imm(struct machine *m, uint8_t opcode,
 
 void op_alu_reg(struct machine *m, uint8_t opcode,
                 uint8_t op1, uint8_t op2) {
-
     uint16_t hl = (m->h << 8) + m->l;
     uint8_t high, low;
 
@@ -448,7 +495,6 @@ void op_alu_reg(struct machine *m, uint8_t opcode,
 
 void op_alu_inc_dec(struct machine *m, uint8_t opcode,
                     uint8_t op1, uint8_t op2) {
-
     uint8_t high, low;
     int8_t dir = 0;
 
@@ -492,7 +538,6 @@ void op_alu_inc_dec(struct machine *m, uint8_t opcode,
 }
 
 void step(struct machine *m) {
-
     // 3 Cycle Fetch
     uint8_t opcode = read_memory(m, m->pc++);
     uint8_t ophigh = read_memory(m, m->pc++);
@@ -808,6 +853,22 @@ int main(int argc, char **argv) {
     register_handler8(0xD6, "SUI", op_alu_imm);
     register_handler8(0xE6, "ANI", op_alu_imm);
     register_handler8(0xF6, "ORI", op_alu_imm);
+
+    register_hrange16(0x01, 0x31, "LXI", op_lxi);
+    register_hrange16(0x02, 0x32, "STAX", op_stax);
+
+    // Remaining to implement
+    // STAX (Store accumulator)
+    // LDAX (Load accumulator from memory
+    // LXI Load register pair immediate
+    // INX /DCX
+    // SHLD Store HL direct
+    // LHLD Load HL Direct
+    // XCHG Exchange HL with DE
+    // DB better handling
+    // Jump instructions
+    // PUSH / POP
+    // Update all status bits and flags where appropriate
 
     printf("Loading program %s\n", argv[1]);
     long n =
