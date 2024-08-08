@@ -512,9 +512,10 @@ uint8_t bdhm_cela_multiplier(char reg) {
     case 'A':
         return 0x30;
 
+        // SP
     case 's':
     case 'S':
-        return 0x40;
+        return 0x30;
     }
 
     return 0x00;
@@ -756,12 +757,6 @@ struct assembly *translate(struct ast *ast,
 
             uint8_t dst =
                 bdhm_cela_multiplier(op->value[0]);
-
-            // Fourth LXI is LXI SP
-            if (op->value[0] == 's' ||
-                op->value[0] == 'S') {
-                dst = 0x30;
-            }
 
             uint8_t opcode = inst->opcode + dst;
             uint16_t addr = htoi(op2->value);

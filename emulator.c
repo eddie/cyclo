@@ -689,8 +689,8 @@ void op_alu_inc_dec(struct machine *m, uint8_t opcode,
 }
 
 void push_stack(struct machine *m, uint16_t val) {
-    write_memory(m, m->sp - 2, val >> 8);
-    write_memory(m, m->sp - 1, val);
+    write_memory(m, m->sp - 2, val);
+    write_memory(m, m->sp - 1, val >> 8);
     m->sp -= 2;
 }
 
@@ -715,8 +715,6 @@ void op_stack(struct machine *m, uint8_t opcode,
         low = low - 0x04;
         high = high + 0x40;
     }
-
-    printf("%x %x %x \n", opcode, high, low);
 
     switch (high) {
 
@@ -753,7 +751,7 @@ void op_stack(struct machine *m, uint8_t opcode,
         push_stack(m, (m->h << 8) + m->l);
         break;
     case 0x70:
-        push_stack(m, (m->sp << 8) + m->sp);
+        push_stack(m, m->sp);
         break;
     }
 }
