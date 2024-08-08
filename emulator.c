@@ -82,10 +82,10 @@ void register_hrange8(
 
     // From the start address increment the range (H) bits.
     for (uint8_t i = start; i <= endh; i += 0x10) {
-        register_handler8(i, mnemonic, handler);
         if (i + 0x10 < start) {
             break;
         }
+        register_handler8(i, mnemonic, handler);
     }
 }
 void register_hrange16(uint8_t start, uint8_t endh,
@@ -96,11 +96,10 @@ void register_hrange16(uint8_t start, uint8_t endh,
                                        uint16_t op)) {
     // From the start address increment the range (H) bits.
     for (uint8_t i = start; i <= endh; i += 0x10) {
-        register_handler16(i, mnemonic, handler);
-
         if (i + 0x10 < start) {
             break;
         }
+        register_handler16(i, mnemonic, handler);
     }
 }
 
@@ -204,6 +203,7 @@ uint8_t decompose_opcode(uint8_t opcode,
     uint8_t low = opcode & 0x0F;
     uint8_t high = opcode & 0xF0;
 
+    // This only works for the first 2 quadrants
     if (low > 0x07) {
         low = low - group_distance;
         high = high + group_offset;
@@ -243,7 +243,9 @@ enum FLAG_BIT {
 
 void update_flag(struct machine *m, unsigned int flag,
                  unsigned int val) {
-    m->status = m->status |= (val << flag);
+
+    m->status &= ~(1 << flag);
+    m->status |= (val << flag);
 }
 
 uint8_t flag_status(struct machine *m, unsigned int flag) {
@@ -251,11 +253,12 @@ uint8_t flag_status(struct machine *m, unsigned int flag) {
 }
 
 void print_machine_status(struct machine *m) {
-    printf("    A:%02x BC:%02x%02x DE:%02x%02x HL:%02x%02x"
-           "    PC: %02x SP: %02x C:%u Z:%u \n\n",
-           m->accumulator, m->b, m->c, m->d, m->e, m->h,
-           m->l, m->pc, m->sp, flag_status(m, CARRY),
-           flag_status(m, ZERO));
+    printf(
+        "%04X: A:%02x BC:%02x%02x DE:%02x%02x HL:%02x%02x"
+        "    C:%u Z:%u SP: %x \n\n",
+        m->pc, m->accumulator, m->b, m->c, m->d, m->e, m->h,
+        m->l, flag_status(m, CARRY), flag_status(m, ZERO),
+        m->sp);
 }
 
 void add_accumulator(struct machine *m, uint8_t val) {
@@ -263,7 +266,6 @@ void add_accumulator(struct machine *m, uint8_t val) {
     if ((m->accumulator + val) > 255) {
         update_flag(m, CARRY, 1);
         m->accumulator &= val;
-
     } else {
         m->accumulator += val;
 
@@ -277,18 +279,28 @@ void add_accumulator(struct machine *m, uint8_t val) {
 void cmp_accumulator(struct machine *m, uint8_t val) {
     // CMP
     int8_t it = 0x0;
-    it = (uint8_t)(m->accumulator - val);
+    it = (int8_t)(m->accumulator - val);
 
     // Zero set if A=REG
     // Carry set if A < REG
     // Carry reset if A > REG
+    printf("%x %x %x\n", m->accumulator, val, it);
     if (it == 0) {
         update_flag(m, ZERO, 1);
     } else if (it < 0) {
         update_flag(m, CARRY, 1);
+        update_flag(m, ZERO, 0);
     } else if (it > 0) {
         update_flag(m, CARRY, 0);
+        update_flag(m, ZERO, 0);
     }
+
+    printf("%x \n", m->status);
+}
+
+void update_generic_flags(struct machine *m) {
+    update_flag(m, ZERO, m->accumulator == 0);
+    update_flag(m, SIGN, m->accumulator >> 7);
 }
 
 void sub_accumulator(struct machine *m, uint8_t val) {
@@ -363,6 +375,62 @@ void op_stax(struct machine *m, uint8_t opcode,
     // STA a16
     case 0x30:
         write_memory(m, op, m->accumulator);
+        break;
+    }
+}
+
+void op_ldax(struct machine *m, uint8_t opcode,
+             uint16_t op) {
+
+    uint8_t high = opcode & 0xF0;
+
+    switch (high) {
+    case 0x00:
+        m->accumulator = read_memory(m, (m->b << 8) + m->c);
+        printf("%x\n", ((m->b) << 8) + m->c);
+        print_memory(m->memory, 100);
+        printf("\n");
+
+        break;
+    case 0x10:
+        m->accumulator = read_memory(m, (m->d << 8) + m->e);
+        break;
+    case 0x30:
+        m->accumulator = read_memory(m, op);
+        break;
+    }
+}
+void op_inx_dcx(struct machine *m, uint8_t opcode,
+                uint16_t op) {
+
+    uint8_t high = opcode & 0xF0; // B/D/H/SP
+    uint8_t low = opcode & 0x0F;  // INX/DCX
+
+    switch (high) {
+        // B
+    case 0x00:
+        m->c++;
+        if (m->c == 0) {
+            m->b++;
+        }
+        break;
+        // D
+    case 0x10:
+        m->e++;
+        if (m->e == 0) {
+            m->d++;
+        }
+        break;
+        // H
+    case 0x30:
+        m->l++;
+        if (m->l == 0) {
+            m->h++;
+        }
+        break;
+        // SP
+    case 0x40:
+        m->sp++;
         break;
     }
 }
@@ -474,8 +542,6 @@ void op_ld(struct machine *m, uint8_t opcode, uint16_t op) {
     uint8_t ophigh, oplow;
     uint8_t opnew = decompose_opcode(opcode, 0x40, 0x40,
                                      0x08, &ophigh, &oplow);
-    printf("------------------__>%x %x\n", opnew,
-           oplow + ophigh);
 
     uint8_t tmp = decode_src_value(m, oplow);
 
@@ -509,52 +575,57 @@ void op_ld(struct machine *m, uint8_t opcode, uint16_t op) {
     }
 }
 
-// TODO: Update status registers!
+void alu(struct machine *m, uint8_t op, uint8_t val) {
+    // High contains the operation.
+    switch (op) {
+        // ADD/ADI
+    case 0x00:
+        add_accumulator(m, val);
+        break;
+        // SUI
+    case 0x10:
+        // TODO:
+        sub_accumulator(m, val);
+        break;
+        // ANI
+    case 0x20:
+        m->accumulator &= val;
+        update_generic_flags(m);
+        break;
+        // ORI
+    case 0x30:
+        m->accumulator |= val;
+        update_generic_flags(m);
+        break;
+
+        // ACI
+    case 0x40:
+        add_accumulator(m, val + flag_status(m, CARRY));
+        break;
+
+        // SBI
+    case 0x50:
+        sub_accumulator(m, val - flag_status(m, CARRY));
+        break;
+        // XRI
+    case 0x60:
+        m->accumulator ^= val;
+        update_generic_flags(m);
+        break;
+        // CMP/CPI
+    case 0x70: {
+        cmp_accumulator(m, val);
+        break;
+    }
+    }
+}
+
 void op_alu_imm(struct machine *m, uint8_t opcode,
                 uint8_t op1, uint8_t op2) {
     uint8_t high, low;
     decompose_opcode(opcode, 0xC6, 0x40, 0x08, &high, &low);
 
-    // High contains the operation.
-    switch (high) {
-
-        // ADI
-    case 0x00:
-        add_accumulator(m, op2);
-        break;
-        // SUI
-    case 0x10:
-        m->accumulator -= op2;
-        break;
-        // ANI
-    case 0x20:
-        m->accumulator &= op2;
-        break;
-        // ORI
-    case 0x30:
-        m->accumulator |= op2;
-        break;
-
-        // ACI
-    case 0x40:
-        m->accumulator += op2 + ((m->status >> 1) & 1);
-        break;
-
-        // SBI
-    case 0x50:
-        // TODO: check!
-        m->accumulator -= op2 + ((m->status >> 1) & 1);
-        break;
-        // XRI
-    case 0x60:
-        m->accumulator ^= op2;
-        break;
-        // CPI
-    case 0x70: {
-        cmp_accumulator(m, op2);
-        break;
-    }
-    }
+    alu(m, high, op2);
 }
 
 void op_alu_reg(struct machine *m, uint8_t opcode,
@@ -566,44 +637,7 @@ void op_alu_reg(struct machine *m, uint8_t opcode,
 
     // Fetch src register value from machine
     uint8_t tmp = decode_src_value(m, low);
-
-    printf("ALU: %02X %02X %02X\n", low, high, tmp);
-
-    // Update status bits
-    switch (high) {
-    case 0x00:
-        add_accumulator(m, tmp);
-        break;
-    case 0x10:
-        sub_accumulator(m, tmp);
-        break;
-    case 0x20:
-        m->accumulator &= tmp;
-        break;
-    case 0x30:
-        m->accumulator |= tmp;
-        break;
-    case 0x40: {
-        uint8_t carry = flag_status(m, CARRY);
-        add_accumulator(m, tmp + carry);
-        break;
-    }
-    case 0x50: {
-        uint8_t carry = flag_status(m, CARRY);
-        sub_accumulator(m, tmp);
-        break;
-    }
-    case 0x60:
-        m->accumulator ^= tmp;
-        break;
-    case 0x70: {
-        cmp_accumulator(m, tmp);
-        break;
-    }
-    }
-
-    update_flag(m, SIGN, (m->accumulator >> 7) & 0x01);
-    update_flag(m, ZERO, (m->accumulator >> 7) == 0);
+    alu(m, high, tmp);
 }
 
 void op_alu_inc_dec(struct machine *m, uint8_t opcode,
@@ -635,8 +669,10 @@ void op_alu_inc_dec(struct machine *m, uint8_t opcode,
         break;
     case 0x20:
         m->h += dir;
+        break;
     case 0x30:
         m->m += dir;
+        break;
     case 0x40:
         m->c += dir;
         break;
@@ -645,8 +681,80 @@ void op_alu_inc_dec(struct machine *m, uint8_t opcode,
         break;
     case 0x60:
         m->l += dir;
+        break;
     case 0x70:
         m->accumulator += dir;
+        break;
+    }
+}
+
+void push_stack(struct machine *m, uint16_t val) {
+    write_memory(m, m->sp - 2, val >> 8);
+    write_memory(m, m->sp - 1, val);
+    m->sp -= 2;
+}
+
+uint16_t pop_stack(struct machine *m) {
+    uint8_t low = read_memory(m, m->sp);
+    uint8_t high = read_memory(m, m->sp + 1);
+    m->sp += 2;
+    return (high << 8) + low;
+}
+
+void op_stack(struct machine *m, uint8_t opcode,
+              uint16_t operand) {
+
+    // Minus POPB to normalize the stack instructions
+    opcode = opcode - 0xC1;
+
+    uint8_t low = opcode & 0x0F;
+    uint8_t high = opcode & 0xF0;
+
+    // Offset stack instructions for switch statement
+    if (low > 0x01) {
+        low = low - 0x04;
+        high = high + 0x40;
+    }
+
+    printf("%x %x %x \n", opcode, high, low);
+
+    switch (high) {
+
+    case 0x00: {
+        uint16_t val = pop_stack(m);
+        m->b = val >> 8;
+        m->c = val;
+        break;
+    }
+    case 0x10: {
+        uint16_t val = pop_stack(m);
+        m->d = val >> 8;
+        m->e = val;
+        break;
+    }
+    case 0x20: {
+        uint16_t val = pop_stack(m);
+        m->h = val >> 8;
+        m->l = val;
+        break;
+    }
+    case 0x30: {
+        uint16_t val = pop_stack(m);
+        m->sp = val;
+        break;
+    }
+    case 0x40:
+        push_stack(m, (m->b << 8) + m->c);
+        break;
+    case 0x50:
+        push_stack(m, (m->d << 8) + m->e);
+        break;
+    case 0x60:
+        push_stack(m, (m->h << 8) + m->l);
+        break;
+    case 0x70:
+        push_stack(m, (m->sp << 8) + m->sp);
+        break;
     }
 }
 
@@ -675,248 +783,6 @@ void step(struct machine *m) {
             oh->handle16(m, oh->opcode, operand);
         }
     }
-    return;
-
-    switch (opcode) {
-
-    case 0x00:
-
-        if ((m->accumulator + operand) > 65535) {
-
-            m->status |= (1 << 1);
-            m->accumulator &= operand;
-
-        } else {
-            m->accumulator += operand;
-
-            if (m->accumulator == 0) {
-                m->status |= 1;
-            }
-        }
-
-        OPCODE("ADD");
-        break;
-
-    case 0x01:
-        OPCODE("ADC")
-
-        // TODO: Reset carry flag
-        m->accumulator += operand + ((m->status >> 1) & 1);
-
-        break;
-
-    case 0x02:
-        m->accumulator -= operand;
-        OPCODE("SUB")
-        break;
-
-    case 0x03:
-        OPCODE("SBC")
-        break;
-
-    case 0x14:
-        m->accumulator = operand;
-        OPCODE("LDA")
-        break;
-
-    case 0x15:
-        m->b = operand;
-        OPCODE("LDB")
-        break;
-    case 0x16:
-        m->h = operand;
-        OPCODE("LDH")
-        break;
-    case 0x17:
-        m->l = operand;
-        OPCODE("LDL")
-        break;
-
-    case 0x2C:
-        m->accumulator = m->b;
-        OPCODE("LDAB")
-        break;
-
-    case 0x2D:
-        m->b = m->accumulator;
-        OPCODE("LDBA")
-        break;
-
-    case 0x2E:
-        m->accumulator = m->l;
-        OPCODE("LDAL")
-        break;
-    case 0x2F:
-        m->l = m->accumulator;
-        OPCODE("LDLA")
-        break;
-
-    case 0x07:
-        m->accumulator = ~m->accumulator;
-        OPCODE("NOT")
-        break;
-
-    case 0x04:
-        OPCODE("AND")
-        m->accumulator &= operand;
-        // Set the zero flag.
-        if (m->accumulator == 0) {
-            m->status |= 1;
-        }
-
-        break;
-
-    case 0x05:
-        OPCODE("OR")
-        m->accumulator |= operand;
-
-        // Set the zero flag.
-        if (m->accumulator == 0) {
-            m->status |= 1;
-        }
-
-        break;
-
-    case 0x06:
-        OPCODE("XOR")
-        m->accumulator ^= operand;
-        // Set the zero flag.
-        if (m->accumulator == 0) {
-            m->status |= 1;
-        }
-        break;
-
-    // Load value from memory to accumulator
-    case 0x09:
-        OPCODE("LDM")
-        m->accumulator = read_memory(m, operand);
-        break;
-
-    // Store value in accumulator to memory
-    case 0x0A:
-        OPCODE("STM")
-        write_memory(m, operand, m->accumulator);
-        break;
-
-    case 0x0B:
-        OPCODE("JMP")
-        m->pc = operand;
-        break;
-
-    case 0x0C:
-        OPCODE("JPI")
-        m->pc = read_memory(m, operand);
-        break;
-
-    case 0x0D:
-        OPCODE("JPZ")
-        // First bit set. jump
-        if (m->status & 1) {
-            m->pc = operand;
-        }
-        break;
-
-    case 0x0E:
-        OPCODE("JPM")
-        if ((m->accumulator >> 8) & 1) {
-            m->pc = operand;
-        }
-        break;
-
-    case 0x0F:
-        OPCODE("JPC")
-        if ((m->status >> 1) & 1) {
-            m->pc = operand;
-        }
-        break;
-
-    case 0x12:
-        OPCODE("JPE")
-        if ((m->status >> 4) & 1) {
-            m->pc = operand;
-        }
-        break;
-
-    case 0x13:
-        OPCODE("JPO")
-        if ((m->status >> 4) & 0) {
-            m->pc = operand;
-        }
-        break;
-
-    case 0x11: {
-        OPCODE("CMP")
-        // Set the carry flag, this is wrong
-        int8_t tmp;
-        tmp = (uint8_t)(m->accumulator - operand);
-        if (tmp == 0) {
-            m->status |= 1;
-        } else {
-            m->status &= 0;
-        }
-        break;
-
-    // TODO: Clean these up when we have more consistent
-    // instruction set as we can reduce this repeated
-    // code
-    case 0x30: {
-        OPCODE("INCA")
-        m->accumulator++;
-        break;
-    }
-    case 0x31: {
-        OPCODE("INCB")
-        m->b++;
-        break;
-    }
-    case 0x32: {
-        OPCODE("INCH")
-        m->h++;
-        break;
-    }
-    case 0x33: {
-        OPCODE("INCL")
-        m->l++;
-        break;
-    }
-    case 0x19:
-        OPCODE("STA")
-        write_memory(m, operand, m->accumulator);
-        break;
-    case 0x20:
-        OPCODE("STB")
-        write_memory(m, operand, m->b);
-        break;
-
-    case 0x21: {
-        OPCODE("STAX")
-        uint16_t rm = (m->h << 8) + m->l;
-        write_memory(m, rm, m->accumulator);
-        break;
-    }
-
-    case 0x42:
-        OPCODE("PUSHA")
-        m->memory[m->sp++] = m->accumulator;
-        printf("\tPushed A: %04X %04X\n", m->accumulator,
-               m->memory[m->sp - 1]);
-        break;
-    case 0x43:
-        OPCODE("PUSHB")
-        m->memory[m->sp++] = m->b;
-        break;
-    case 0x44:
-        OPCODE("POPA")
-        m->accumulator = m->memory[--m->sp];
-        printf("\tPopped A: %04X %04X %04x\n",
-               m->accumulator, m->memory[m->sp], m->sp);
-        break;
-    case 0x45:
-        OPCODE("POPB")
-        m->b = m->memory[--m->sp];
-        break;
-    }
-    }
 }
 
 int main(int argc, char **argv) {
@@ -937,8 +803,8 @@ int main(int argc, char **argv) {
 
     register_range16(0x40, 0x7F, "MOV", op_ld);
     register_handler16(0x76, "HLT", op_hlt);
-    register_hrange8(0x06, 0x36, "MVILH", op_ldi);
-    register_hrange8(0x0E, 0x3E, "MVILH", op_ldi);
+    register_hrange8(0x06, 0x36, "LDI", op_ldi);
+    register_hrange8(0x0E, 0x3E, "LDI", op_ldi);
 
     register_range8(0x80, 0x87, "ADD", op_alu_reg);
     register_range8(0x88, 0x8F, "ADDC", op_alu_reg);
@@ -969,27 +835,16 @@ int main(int argc, char **argv) {
 
     register_hrange16(0x01, 0x31, "LXI", op_lxi);
     register_hrange16(0x02, 0x32, "STAX", op_stax);
+    register_hrange16(0x0A, 0x3A, "LDAX", op_ldax);
+    register_hrange16(0x03, 0x33, "INX", op_inx_dcx);
+    register_hrange16(0x0B, 0x3B, "INX", op_inx_dcx);
 
     register_hrange16(0xC2, 0xF2, "JP", op_jp);
     register_hrange16(0xCA, 0xFA, "JP", op_jp);
     register_handler16(0xC3, "JMP", op_jp);
 
-    // Remaining to implement
-    // STAX (Store accumulator)
-    // LDAX (Load accumulator from memory
-    // LXI Load register pair immediate
-    // INX /DCX
-    // SHLD Store HL direct
-    // LHLD Load HL Direct
-    // XCHG Exchange HL with DE
-    // DB better handling
-    // Jump instructions
-    //
-    // PUSH PSW POP PSW
-    // PUSH / POP
-    // CMC / STC flag manpulation
-    // Update all status bits and flags where appropriate
-    // Cleanup logging and debug levels
+    register_hrange16(0xC1, 0xF1, "POP", op_stack);
+    register_hrange16(0xC5, 0xF5, "PUSH", op_stack);
 
     printf("Loading program %s\n", argv[1]);
     long n =

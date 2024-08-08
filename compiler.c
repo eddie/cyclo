@@ -511,6 +511,10 @@ uint8_t bdhm_cela_multiplier(char reg) {
     case 'a':
     case 'A':
         return 0x30;
+
+    case 's':
+    case 'S':
+        return 0x40;
     }
 
     return 0x00;
@@ -659,6 +663,7 @@ struct assembly *translate(struct ast *ast,
         } else if (EQUALS(n->opcode, "ADD") ||
                    EQUALS(n->opcode, "ADC") ||
                    EQUALS(n->opcode, "SUB") ||
+                   EQUALS(n->opcode, "AND") ||
                    EQUALS(n->opcode, "SBB") ||
                    EQUALS(n->opcode, "CMP") ||
                    EQUALS(n->opcode, "XOR") ||
@@ -741,8 +746,8 @@ struct assembly *translate(struct ast *ast,
 
             WRITE_OPCODE(memory, inst->opcode);
             WRITE_OPERAND(memory, addr);
-            printf("%4x: %s(%x) \n", address, n->opcode,
-                   addr);
+            printf("%4x: %s(%x) %x\n", address, n->opcode,
+                   inst->opcode, addr);
         } else if (EQUALS(n->opcode, "LXI")) {
 
             // B,D,H, SP
@@ -775,7 +780,12 @@ struct assembly *translate(struct ast *ast,
             printf("%4x: %s(%x) %x \n", address, n->opcode,
                    opcode, addr);
         } else if (EQUALS(n->opcode, "STAX") ||
-                   EQUALS(n->opcode, "STA")) {
+                   EQUALS(n->opcode, "STA") ||
+                   EQUALS(n->opcode, "INX") ||
+                   EQUALS(n->opcode, "DCX") ||
+                   EQUALS(n->opcode, "LDA") ||
+                   EQUALS(n->opcode, "LDAX")) {
+
             struct instruction *inst =
                 lookup_base_mnem(n->opcode);
 
@@ -793,11 +803,15 @@ struct assembly *translate(struct ast *ast,
                 WRITE_NOOPERAND(memory);
 
             } else {
-                // STA d16
+                // [xxx] d16
                 uint16_t addr = htoi(op->value);
 
+                // Assume label is data, so use data offset
+                // TODO: parser should verify if not db
+                // label
                 if (op->type == LABEL) {
-                    addr = get_symbol_addr(st, op->value);
+                    addr = data_base +
+                           get_symbol_addr(st, op->value);
                 }
 
                 WRITE_OPCODE(memory, inst->opcode);
@@ -828,6 +842,22 @@ struct assembly *translate(struct ast *ast,
                         htoi(dop->value);
                 }
             }
+        } else if (EQUALS(n->opcode, "PUSH") ||
+                   EQUALS(n->opcode, "POP")) {
+
+            struct instruction *inst =
+                lookup_base_mnem(n->opcode);
+
+            uint8_t dst =
+                bdhm_cela_multiplier(op->value[0]);
+
+            uint8_t opcode = inst->opcode + dst;
+
+            printf("%4x: %s(%x) %c \n", address, n->opcode,
+                   opcode, op->value[0]);
+
+            WRITE_OPCODE(memory, opcode);
+            WRITE_NOOPERAND(memory);
         }
     }
 
