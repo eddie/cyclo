@@ -394,7 +394,7 @@ struct ast *parse_tokens(struct token *root) {
 
                 if (op->type == TOPERAND) {
                     if (isalpha(op->s_val[0]) &&
-                        !isalpha(op->s_val[1])) {
+                        strlen(op->s_val) <= 3) {
                         arg->type = TREGISTER;
                     } else {
                         arg->type = TVALUE;
@@ -512,9 +512,11 @@ uint8_t bdhm_cela_multiplier(char reg) {
     case 'A':
         return 0x30;
 
-        // SP
+    // SP / PSW
     case 's':
     case 'S':
+    case 'p':
+    case 'P':
         return 0x30;
     }
 
@@ -862,8 +864,6 @@ struct assembly *translate(struct ast *ast,
     // * PUSH/POP
     // * IN/OUT
     // * XCHG
-    // * STAX
-    // * INX
 
     // Write HLT
     struct instruction *inst = lookup_base_mnem("HLT");

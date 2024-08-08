@@ -28,7 +28,7 @@ struct instruction instructions[] = {
 
     X(LXI, 0x01),  X(STAX, 0x02), X(STA, 0x32),
     X(LDAX, 0x0A), X(LDA, 0x3A),  X(LHLD, 0x2A),
-    X(INX, 0x03),  X(DCX, 0x0D),
+    X(INX, 0x03),  X(DCX, 0x0B),
 
     X(PUSH, 0xC5), X(POP, 0xC1),
 

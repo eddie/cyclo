@@ -255,10 +255,11 @@ uint8_t flag_status(struct machine *m, unsigned int flag) {
 void print_machine_status(struct machine *m) {
     printf(
         "%04X: A:%02x BC:%02x%02x DE:%02x%02x HL:%02x%02x"
-        "    C:%u Z:%u SP: %x \n\n",
+        "    C:%u Z:%u SP: %x [%x%x] \n\n",
         m->pc, m->accumulator, m->b, m->c, m->d, m->e, m->h,
         m->l, flag_status(m, CARRY), flag_status(m, ZERO),
-        m->sp);
+        m->sp, read_memory(m, m->sp - 1),
+        read_memory(m, m->sp - 2));
 }
 
 void add_accumulator(struct machine *m, uint8_t val) {
@@ -403,34 +404,50 @@ void op_ldax(struct machine *m, uint8_t opcode,
 void op_inx_dcx(struct machine *m, uint8_t opcode,
                 uint16_t op) {
 
-    uint8_t high = opcode & 0xF0; // B/D/H/SP
-    uint8_t low = opcode & 0x0F;  // INX/DCX
+    uint8_t high, low;
+    int8_t dir = 0;
+
+    if ((opcode & 0x0F) == 0x03) {
+        decompose_opcode(opcode, 0x03, 0x40, 0x08, &high,
+                         &low);
+        dir = 1;
+
+    } else {
+        // DCX
+        decompose_opcode(opcode, 0x0B, 0x40, 0x08, &high,
+                         &low);
+        dir = -1;
+    }
 
     switch (high) {
         // B
     case 0x00:
-        m->c++;
+        m->c += dir;
         if (m->c == 0) {
+            // TODO: Handle negative overflow
             m->b++;
         }
         break;
         // D
     case 0x10:
-        m->e++;
+        m->e += dir;
         if (m->e == 0) {
+            // TODO: Handle negative overflow
             m->d++;
         }
         break;
         // H
-    case 0x30:
-        m->l++;
+    case 0x20:
+        m->l += dir;
         if (m->l == 0) {
+            // TODO: Handle negative overflow
             m->h++;
         }
         break;
         // SP
-    case 0x40:
-        m->sp++;
+    case 0x30:
+        // TODO: Handle negative overflow
+        m->sp += dir;
         break;
     }
 }
@@ -738,7 +755,8 @@ void op_stack(struct machine *m, uint8_t opcode,
     }
     case 0x30: {
         uint16_t val = pop_stack(m);
-        m->sp = val;
+        m->status = val >> 8;
+        m->accumulator = val;
         break;
     }
     case 0x40:
@@ -751,7 +769,7 @@ void op_stack(struct machine *m, uint8_t opcode,
         push_stack(m, (m->h << 8) + m->l);
         break;
     case 0x70:
-        push_stack(m, m->sp);
+        push_stack(m, (m->status << 8) + m->accumulator);
         break;
     }
 }
@@ -819,7 +837,7 @@ int main(int argc, char **argv) {
     register_hrange8(0x04, 0x34, "INR", op_alu_inc_dec);
     register_hrange8(0x0C, 0x3C, "INR", op_alu_inc_dec);
     register_hrange8(0x05, 0x35, "DCR", op_alu_inc_dec);
-    register_hrange8(0x0D, 0x3D, "INR", op_alu_inc_dec);
+    register_hrange8(0x0D, 0x3D, "DCR", op_alu_inc_dec);
 
     register_handler8(0xCE, "ACI", op_alu_imm);
     register_handler8(0xDE, "SBI", op_alu_imm);
@@ -834,8 +852,9 @@ int main(int argc, char **argv) {
     register_hrange16(0x01, 0x31, "LXI", op_lxi);
     register_hrange16(0x02, 0x32, "STAX", op_stax);
     register_hrange16(0x0A, 0x3A, "LDAX", op_ldax);
+
     register_hrange16(0x03, 0x33, "INX", op_inx_dcx);
-    register_hrange16(0x0B, 0x3B, "INX", op_inx_dcx);
+    register_hrange16(0x0B, 0x3B, "DCX", op_inx_dcx);
 
     register_hrange16(0xC2, 0xF2, "JP", op_jp);
     register_hrange16(0xCA, 0xFA, "JP", op_jp);
