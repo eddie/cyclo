@@ -565,6 +565,7 @@ struct assembly {
     uint8_t len;
 };
 
+// TODO: Switch order for little endian
 #define WRITE_OPERAND(memory, operand)                     \
     memory[address++] = (operand >> 8) & 0xFF;             \
     memory[address++] = operand;
@@ -781,6 +782,7 @@ struct assembly *translate(struct ast *ast,
                    EQUALS(n->opcode, "INX") ||
                    EQUALS(n->opcode, "DCX") ||
                    EQUALS(n->opcode, "LDA") ||
+                   EQUALS(n->opcode, "LHLD") ||
                    EQUALS(n->opcode, "LDAX")) {
 
             struct instruction *inst =

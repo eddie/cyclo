@@ -396,6 +396,14 @@ void op_ldax(struct machine *m, uint8_t opcode,
     case 0x10:
         m->accumulator = read_memory(m, (m->d << 8) + m->e);
         break;
+    case 0x20: {
+        // LHLD
+        // TODO: The byte order isn't right here, the 8080
+        // is little endian!
+        uint16_t addr = op;
+        m->h = read_memory(m, addr);
+        m->l = read_memory(m, addr + 1);
+    } break;
     case 0x30:
         m->accumulator = read_memory(m, op);
         break;

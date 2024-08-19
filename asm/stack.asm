@@ -18,3 +18,5 @@
   pop psw
 
 
+  lhld 0x00
+

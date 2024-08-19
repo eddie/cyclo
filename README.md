@@ -6,6 +6,7 @@ Beware! This is mostly a place to learn and improve my C skills whilst scratchin
 
 # TODO
 
+- [ ] Correct ordering of low/high bits for operand. The 8080 was little endian not big endian
 - [ ] Better parse errors, e.g incorrect operand
 - [ ] Improved debug messaging and levels
 - [ ] Finish full 8080 instruction set.
@@ -17,7 +18,5 @@ Beware! This is mostly a place to learn and improve my C skills whilst scratchin
 - [ ] LHLD Load HL Direct
 - [ ] XCHG Exchange HL with DE / XTHL too
 - [ ] DB better handling
-- [ ] PUSH PSW POP PSW
-- [ ] PUSH / POP
 - [ ] Update all status bits and flags where appropriate
 - [ ] Cleanup logging and debug levels
